@@ -287,6 +287,7 @@ private struct QuotaGraphView: View {
                             Text("\(Int(number))")
                                 .font(.system(size: 9, weight: .medium).monospacedDigit())
                                 .foregroundStyle(.secondary)
+                                .offset(y: number == 0 ? -4 : 0)
                         }
                     }
                 }
