@@ -91,6 +91,14 @@ final class QuotaProjectionTests: XCTestCase {
 
         XCTAssertNotNil(forecast)
         XCTAssertEqual(forecast?.projectedWeeklyUsedPercentAtReset ?? 0, 33.333, accuracy: 0.001)
+        XCTAssertEqual(forecast?.averageRuns.count, 5)
+        XCTAssertEqual(forecast?.averageRuns.first?.startDate, start.addingTimeInterval(2 * day + 18 * 60 * 60))
+        XCTAssertEqual(forecast?.averageRuns.first?.endDate, start.addingTimeInterval(3 * day + 3 * 60 * 60))
+        if let averageRuns = forecast?.averageRuns {
+            XCTAssertTrue(zip(averageRuns, averageRuns.dropFirst()).allSatisfy { previous, next in
+                abs(previous.endUsedPercent - next.startUsedPercent) < 0.001
+            })
+        }
         XCTAssertEqual(forecast?.ghostRuns.count, 10)
         XCTAssertEqual(forecast?.ghostRuns.first?.startDate, start.addingTimeInterval(2 * day + 18 * 60 * 60))
         XCTAssertEqual(forecast?.ghostRuns.first?.endDate, start.addingTimeInterval(3 * day + 3 * 60 * 60))
@@ -120,6 +128,7 @@ final class QuotaProjectionTests: XCTestCase {
 
         XCTAssertNotNil(forecast)
         XCTAssertEqual(forecast?.projectedWeeklyUsedPercentAtReset ?? 0, 96, accuracy: 0.001)
+        XCTAssertEqual(forecast?.averageRuns.count, 4)
         XCTAssertEqual(forecast?.ghostRuns.count, 8)
     }
 

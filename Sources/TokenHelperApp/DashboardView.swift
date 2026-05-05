@@ -275,6 +275,8 @@ private struct QuotaGraphView: View {
                             forecast: cycleForecast,
                             startDate: startDate,
                             resetDate: resetDate,
+                            currentDate: actualPoints.last?.date ?? now,
+                            currentUsedPercent: actualPoints.last?.percent ?? graphPercent(projection.currentWeeklyUsedPercent),
                             ceiling: graphCeiling
                         )
                         .allowsHitTesting(false)
@@ -431,6 +433,8 @@ private struct CycleForecastLineOverlay: View {
     let forecast: QuotaCycleRunForecast
     let startDate: Date
     let resetDate: Date
+    let currentDate: Date
+    let currentUsedPercent: Double
     let ceiling: Double
 
     private let threshold = 100.0
@@ -444,16 +448,6 @@ private struct CycleForecastLineOverlay: View {
                     return
                 }
 
-                let ghostPath = ghostRunPath(in: size)
-                drawThresholded(
-                    path: ghostPath,
-                    in: size,
-                    context: &context,
-                    belowColor: .blue.opacity(0.11),
-                    aboveColor: .red.opacity(0.26),
-                    lineWidth: 2.4
-                )
-
                 let averagePath = averagePath(in: size)
                 drawThresholded(
                     path: averagePath,
@@ -461,33 +455,44 @@ private struct CycleForecastLineOverlay: View {
                     context: &context,
                     belowColor: .blue.opacity(0.28),
                     aboveColor: .red.opacity(0.46),
-                    lineWidth: 4.5
+                    lineWidth: 4.5,
+                    lineCap: .butt,
+                    lineJoin: .miter
                 )
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
     }
 
-    private func ghostRunPath(in size: CGSize) -> Path {
-        var path = Path()
-        for run in uniqueForecastRuns(forecast.ghostRuns) where run.endDate > run.startDate {
-            path.move(to: plotPoint(date: run.startDate, percent: run.startUsedPercent, in: size))
-            path.addLine(to: plotPoint(date: run.endDate, percent: run.endUsedPercent, in: size))
-        }
-        return path
-    }
-
     private func averagePath(in size: CGSize) -> Path {
-        let points = forecast.corridorPoints
-            .sorted { $0.date < $1.date }
-            .map { plotPoint(date: $0.date, percent: $0.averageUsedPercent, in: size) }
         var path = Path()
-        guard let first = points.first else {
-            return path
+        var lastEnd: CGPoint?
+        let runs = forecast.averageRuns
+            .sorted { $0.startDate < $1.startDate }
+            .filter { $0.endDate > $0.startDate }
+
+        if let first = runs.first {
+            let current = plotPoint(date: currentDate, percent: currentUsedPercent, in: size)
+            let firstStart = plotPoint(date: first.startDate, percent: first.startUsedPercent, in: size)
+            path.move(to: current)
+            path.addLine(to: CGPoint(x: firstStart.x, y: current.y))
+            lastEnd = CGPoint(x: firstStart.x, y: current.y)
         }
-        path.move(to: first)
-        for point in points.dropFirst() {
-            path.addLine(to: point)
+
+        for run in runs {
+            let start = plotPoint(date: run.startDate, percent: run.startUsedPercent, in: size)
+            let end = plotPoint(date: run.endDate, percent: run.endUsedPercent, in: size)
+            if let lastEnd {
+                let connector = CGPoint(x: start.x, y: lastEnd.y)
+                path.addLine(to: connector)
+                if abs(connector.y - start.y) > 0.5 {
+                    path.addLine(to: start)
+                }
+            } else {
+                path.move(to: start)
+            }
+            path.addLine(to: end)
+            lastEnd = end
         }
         return path
     }
@@ -498,10 +503,12 @@ private struct CycleForecastLineOverlay: View {
         context: inout GraphicsContext,
         belowColor: Color,
         aboveColor: Color,
-        lineWidth: Double
+        lineWidth: Double,
+        lineCap: CGLineCap,
+        lineJoin: CGLineJoin
     ) {
         let thresholdY = y(percent: threshold, in: size)
-        let style = StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round)
+        let style = StrokeStyle(lineWidth: lineWidth, lineCap: lineCap, lineJoin: lineJoin)
         let aboveRect = CGRect(x: 0, y: 0, width: size.width, height: thresholdY)
         let belowRect = CGRect(x: 0, y: thresholdY, width: size.width, height: size.height - thresholdY)
 
@@ -531,25 +538,6 @@ private struct CycleForecastLineOverlay: View {
     private func y(percent: Double, in size: CGSize) -> Double {
         let value = min(ceiling, max(0, percent))
         return size.height * (1 - value / ceiling)
-    }
-
-    private func uniqueForecastRuns(_ runs: [QuotaForecastRun]) -> [QuotaForecastRun] {
-        var seen: Set<String> = []
-        return runs.filter { run in
-            let key = [
-                quantized(run.startDate.timeIntervalSince1970, step: 60),
-                quantized(run.endDate.timeIntervalSince1970, step: 60),
-                quantized(run.startUsedPercent, step: 0.1),
-                quantized(run.endUsedPercent, step: 0.1)
-            ]
-            .map(String.init)
-            .joined(separator: ":")
-            return seen.insert(key).inserted
-        }
-    }
-
-    private func quantized(_ value: Double, step: Double) -> Int {
-        Int((value / step).rounded())
     }
 }
 

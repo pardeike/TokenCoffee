@@ -10,15 +10,18 @@ public enum QuotaPaceState: String, Codable, Equatable, Sendable {
 public struct QuotaCycleRunForecast: Equatable, Sendable {
     public let projectedWeeklyUsedPercentAtReset: Double
     public let ghostRuns: [QuotaForecastRun]
+    public let averageRuns: [QuotaForecastRun]
     public let corridorPoints: [QuotaForecastCorridorPoint]
 
     public init(
         projectedWeeklyUsedPercentAtReset: Double,
         ghostRuns: [QuotaForecastRun],
+        averageRuns: [QuotaForecastRun] = [],
         corridorPoints: [QuotaForecastCorridorPoint]
     ) {
         self.projectedWeeklyUsedPercentAtReset = projectedWeeklyUsedPercentAtReset
         self.ghostRuns = ghostRuns
+        self.averageRuns = averageRuns
         self.corridorPoints = corridorPoints
     }
 }
@@ -331,6 +334,7 @@ public enum QuotaProjectionEngine {
             return nil
         }
 
+        let averageRuns = forecastRuns(current: current, events: scheduled.average)
         let ghostRuns = scheduledGhostRuns(
             clusters: clusters,
             averageEvents: scheduled.average,
@@ -363,6 +367,7 @@ public enum QuotaProjectionEngine {
         return QuotaCycleRunForecast(
             projectedWeeklyUsedPercentAtReset: projected,
             ghostRuns: ghostRuns,
+            averageRuns: averageRuns,
             corridorPoints: corridorPoints
         )
     }
@@ -576,6 +581,21 @@ public enum QuotaProjectionEngine {
             }
         }
         return ghostRuns.sorted { $0.startDate < $1.startDate }
+    }
+
+    private static func forecastRuns(
+        current: Double,
+        events: [ScheduledForecastRun]
+    ) -> [QuotaForecastRun] {
+        events.sorted { $0.startDate < $1.startDate }.map { event in
+            let startUsedPercent = forecastPercent(at: event.startDate, current: current, events: events)
+            return QuotaForecastRun(
+                startDate: event.startDate,
+                endDate: event.endDate,
+                startUsedPercent: startUsedPercent,
+                endUsedPercent: startUsedPercent + event.gain
+            )
+        }
     }
 
     private static func scheduledForecastRun(
