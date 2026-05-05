@@ -1,6 +1,7 @@
 name: TokenHelper
 options:
   minimumXcodeGenVersion: 2.42.0
+  postGenCommand: ./Scripts/patch-iconcomposer-filetype.sh
   deploymentTarget:
     macOS: "26.0"
 settings:
@@ -38,9 +39,13 @@ targets:
     type: application
     platform: macOS
     sources:
-      - Sources/TokenHelperApp
+      - path: Sources/TokenHelperApp
+        excludes:
+          - AppIcon.icon
+      - path: Sources/TokenHelperApp/AppIcon.icon
+        type: file
+        buildPhase: resources
     resources:
-      - Sources/TokenHelperApp/Assets.xcassets
       - Sources/TokenHelperApp/Resources
     dependencies:
       - target: TokenHelperCore

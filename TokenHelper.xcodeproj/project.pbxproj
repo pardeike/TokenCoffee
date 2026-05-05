@@ -19,7 +19,6 @@
 		4B3A8FA38652FD02F8EBAEE1 /* TokenHelperCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A12E08D0691B2DEF25D759FD /* TokenHelperCore.framework */; };
 		61022298E343C062A5089412 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8188DA6B806928672EA2B519 /* SwiftUI.framework */; };
 		634325AC3D25E923010CAD65 /* CodexRateLimitDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C37F606A2C5B40F64292A920 /* CodexRateLimitDecodingTests.swift */; };
-		67900639547C6FF1718FC2C1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B37500A06F6D2CE56C7269D3 /* Assets.xcassets */; };
 		6F01BE8BB0007671C8AF4E37 /* Charts.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 135CB69582A7995BFC47C3C3 /* Charts.framework */; };
 		6F3BC305C7D70061CEC66651 /* StatusIconOff.png in Resources */ = {isa = PBXBuildFile; fileRef = 57FDA630B8A285D07EA3A17D /* StatusIconOff.png */; };
 		7CECA134C6515F698AD5BBB1 /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EAB72A88B626B5F4CC5C80CE /* AppKit.framework */; };
@@ -27,6 +26,7 @@
 		9B078D63DE588991B629333C /* StatusPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CFE6C752A213D2434FCD675 /* StatusPanelController.swift */; };
 		A162A39CE6B9DE0F167024CF /* ClamshellFailSafeInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B773E9A4104424D446B4C57 /* ClamshellFailSafeInstaller.swift */; };
 		B8EF6F03FDEFD4F10A405088 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 862948D78679F37E7050A8C6 /* AppModel.swift */; };
+		C5422EE82B7688EF0638B0B7 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = AA754F581EB2B59DBBC95FE4 /* AppIcon.icon */; };
 		C8A7DC37C9B90A638B143EE5 /* PowerSessionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 975E1F243FBEEE13DAEDE02C /* PowerSessionControllerTests.swift */; };
 		D29EF398A7F6102A7682D7C0 /* QuotaSampleStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A60EE0AEAA28D4917151B43 /* QuotaSampleStoreTests.swift */; };
 		E25530A50E39EB52263F91BD /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EDBC35E2BEAFE948F42883D /* DashboardView.swift */; };
@@ -95,8 +95,8 @@
 		975E1F243FBEEE13DAEDE02C /* PowerSessionControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerSessionControllerTests.swift; sourceTree = "<group>"; };
 		9B773E9A4104424D446B4C57 /* ClamshellFailSafeInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClamshellFailSafeInstaller.swift; sourceTree = "<group>"; };
 		A12E08D0691B2DEF25D759FD /* TokenHelperCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = TokenHelperCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA754F581EB2B59DBBC95FE4 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		ACB346A0773447F25BA2CA89 /* QuotaProjectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaProjectionTests.swift; sourceTree = "<group>"; };
-		B37500A06F6D2CE56C7269D3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		C37F606A2C5B40F64292A920 /* CodexRateLimitDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexRateLimitDecodingTests.swift; sourceTree = "<group>"; };
 		C809438C82E39486E6CCCDF0 /* TokenHelper.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TokenHelper.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C93E92681111398D06FDEB8E /* StatusIconOn.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = StatusIconOn.png; sourceTree = "<group>"; };
@@ -164,8 +164,8 @@
 			isa = PBXGroup;
 			children = (
 				E0692CE16AA24C1D3C48CA4E /* AppDelegate.swift */,
+				AA754F581EB2B59DBBC95FE4 /* AppIcon.icon */,
 				862948D78679F37E7050A8C6 /* AppModel.swift */,
-				B37500A06F6D2CE56C7269D3 /* Assets.xcassets */,
 				0EDBC35E2BEAFE948F42883D /* DashboardView.swift */,
 				7B92602C6427896704F6CEBF /* Info.plist */,
 				6CFE6C752A213D2434FCD675 /* StatusPanelController.swift */,
@@ -319,7 +319,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				67900639547C6FF1718FC2C1 /* Assets.xcassets in Resources */,
+				C5422EE82B7688EF0638B0B7 /* AppIcon.icon in Resources */,
 				6F3BC305C7D70061CEC66651 /* StatusIconOff.png in Resources */,
 				24CE3432506DA21003B5C56E /* StatusIconOn.png in Resources */,
 			);
