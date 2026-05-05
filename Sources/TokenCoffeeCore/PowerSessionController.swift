@@ -43,24 +43,24 @@ public final class PowerSessionController {
 
         if mode == .off {
             try setClamshellDisabled(false)
-            TokenHelperDefaults.setClosedDisplayModeEnabled(false)
+            TokenCoffeeDefaults.setClosedDisplayModeEnabled(false)
             return
         }
 
         systemAssertion = try client.createAssertion(
             kind: .preventIdleSystemSleep,
-            name: "TokenHelper - System"
+            name: "Token Coffee - System"
         )
 
         if mode == .keepAwakeDisplay {
             displayAssertion = try client.createAssertion(
                 kind: .preventIdleDisplaySleep,
-                name: "TokenHelper - Display"
+                name: "Token Coffee - Display"
             )
         }
 
         try setClamshellDisabled(true)
-        TokenHelperDefaults.setClosedDisplayModeEnabled(true)
+        TokenCoffeeDefaults.setClosedDisplayModeEnabled(true)
     }
 
     private func releaseAssertions() {
@@ -164,8 +164,8 @@ public final class IOKitPowerAssertionClient: PowerAssertionClient {
     }
 }
 
-public enum TokenHelperDefaults {
-    public static let domain = "com.pardeike.TokenHelper"
+public enum TokenCoffeeDefaults {
+    public static let domain = "com.pardeike.TokenCoffee"
     public static let closedDisplayModeEnabledKey = "closedDisplayModeEnabled"
 
     public static func setClosedDisplayModeEnabled(_ enabled: Bool, userDefaults: UserDefaults = .standard) {

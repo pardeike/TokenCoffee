@@ -1,5 +1,5 @@
 import XCTest
-@testable import TokenHelperCore
+@testable import TokenCoffeeCore
 
 final class PowerSessionControllerTests: XCTestCase {
     func testKeepAwakeDisplayCreatesAssertionsAndDisablesClamshellSleep() throws {

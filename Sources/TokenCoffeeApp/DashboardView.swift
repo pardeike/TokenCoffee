@@ -1,10 +1,12 @@
 import AppKit
 import Charts
 import SwiftUI
-import TokenHelperCore
+import TokenCoffeeCore
 
 struct DashboardView: View {
     @ObservedObject var model: AppModel
+    @Environment(\.openURL) private var openURL
+    @State private var selectedPowerMode: PowerSessionMode = .off
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -17,7 +19,7 @@ struct DashboardView: View {
                     .lineLimit(2)
             }
 
-            quotaSection
+            contentSection
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -27,10 +29,7 @@ struct DashboardView: View {
 
     private var powerControls: some View {
         HStack(spacing: 8) {
-            Picker("Power", selection: Binding(
-                get: { model.powerMode },
-                set: { model.setPowerMode($0) }
-            )) {
+            Picker("Power", selection: $selectedPowerMode) {
                 Text("Off").tag(PowerSessionMode.off)
                 Text("Mac awake").tag(PowerSessionMode.keepAwake)
                 Text("Screen on").tag(PowerSessionMode.keepAwakeDisplay)
@@ -39,11 +38,32 @@ struct DashboardView: View {
             .labelsHidden()
             .font(.system(size: 12, weight: .semibold))
             .frame(width: 248)
+            .onAppear {
+                selectedPowerMode = model.powerMode
+            }
+            .onChange(of: selectedPowerMode) { _, mode in
+                guard mode != model.powerMode else {
+                    return
+                }
+                Task { @MainActor in
+                    model.setPowerMode(mode)
+                }
+            }
+            .onReceive(model.$powerMode) { mode in
+                guard mode != selectedPowerMode else {
+                    return
+                }
+                selectedPowerMode = mode
+            }
 
             Spacer(minLength: 0)
 
             Button {
-                NSApp.terminate(nil)
+                if NSEvent.modifierFlags.contains(.option) {
+                    model.logoutCodex()
+                } else {
+                    NSApp.terminate(nil)
+                }
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 16, weight: .semibold))
@@ -56,6 +76,26 @@ struct DashboardView: View {
             .help("Quit")
         }
         .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var contentSection: some View {
+        if showsQuotaDashboard {
+            quotaSection
+        } else {
+            codexAuthSection
+        }
+    }
+
+    private var showsQuotaDashboard: Bool {
+        switch model.codexSignInState {
+        case .signedIn:
+            return true
+        case .unknown:
+            return model.quotaSnapshot != nil
+        case .needsSignIn, .startingSignIn, .signingIn, .failed:
+            return false
+        }
     }
 
     private var quotaSection: some View {
@@ -96,7 +136,7 @@ struct DashboardView: View {
             }
             .font(.headline.monospacedDigit())
             .foregroundStyle(.primary)
-            .help("Weekly renew date")
+            .help(model.lastQuotaErrorMessage ?? "Weekly renew date")
         }
     }
 
@@ -111,6 +151,17 @@ struct DashboardView: View {
                     .foregroundStyle(.orange)
             }
 
+            if model.lastQuotaErrorDate != nil, let errorMessage = model.lastQuotaErrorMessage {
+                Label(shortQuotaErrorMessage(errorMessage), systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+                    .help(errorMessage)
+            }
+
+            let syncStatusValue = syncStatusDisplay
+            Label(syncStatusValue.text, systemImage: syncStatusValue.systemImage)
+                .foregroundStyle(syncStatusValue.color)
+                .help(syncStatusValue.help)
+
             Spacer(minLength: 0)
 
             Text(paceText(model.projection.paceState))
@@ -120,8 +171,210 @@ struct DashboardView: View {
         .lineLimit(1)
     }
 
+    @ViewBuilder
+    private var codexAuthSection: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 4)
+
+            switch model.codexSignInState {
+            case .unknown:
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .controlSize(.regular)
+                    authHeader(
+                        title: "Checking Codex",
+                        detail: "Looking for an existing ChatGPT sign-in."
+                    )
+                }
+
+            case .needsSignIn:
+                VStack(spacing: 14) {
+                    authHeader(
+                        systemImage: "person.crop.circle.badge.plus",
+                        title: "Sign in to Codex",
+                        detail: "Use your ChatGPT account to read Codex usage limits on this Mac."
+                    )
+
+                    Button {
+                        model.beginCodexSignIn()
+                    } label: {
+                        Label("Sign in", systemImage: "arrow.right.circle.fill")
+                            .frame(minWidth: 112)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .help("Start ChatGPT device-code sign-in")
+                }
+
+            case .startingSignIn:
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .controlSize(.regular)
+                    authHeader(
+                        title: "Starting Sign-In",
+                        detail: "Contacting Codex for a device code."
+                    )
+                }
+
+            case let .signingIn(login):
+                VStack(spacing: 13) {
+                    authHeader(
+                        systemImage: "keyboard",
+                        title: "Enter This Code",
+                        detail: "Open the sign-in page, then enter the code shown here."
+                    )
+
+                    Text(login.userCode ?? "Waiting...")
+                        .font(.system(size: 28, weight: .semibold, design: .monospaced))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity)
+                        .help("Codex device code")
+
+                    HStack(spacing: 10) {
+                        Button {
+                            if let url = login.verificationURL {
+                                openURL(url)
+                            }
+                        } label: {
+                            Label("Open", systemImage: "safari")
+                                .frame(minWidth: 82)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(login.verificationURL == nil)
+                        .help("Open Codex sign-in page")
+
+                        Button {
+                            copyCodexCode(login.userCode)
+                        } label: {
+                            Label("Copy", systemImage: "doc.on.doc")
+                                .frame(minWidth: 76)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(login.userCode == nil)
+                        .help("Copy device code")
+
+                        Button {
+                            model.cancelCodexSignIn()
+                        } label: {
+                            Label("Cancel", systemImage: "xmark.circle")
+                                .frame(minWidth: 82)
+                        }
+                        .buttonStyle(.bordered)
+                        .help("Cancel Codex sign-in")
+                    }
+                    .controlSize(.regular)
+                }
+
+            case .signedIn:
+                EmptyView()
+
+            case let .failed(message):
+                VStack(spacing: 14) {
+                    authHeader(
+                        systemImage: "exclamationmark.triangle",
+                        title: "Sign-In Failed",
+                        detail: shortSignInErrorMessage(message),
+                        iconColor: .orange
+                    )
+
+                    Button {
+                        model.beginCodexSignIn()
+                    } label: {
+                        Label("Try again", systemImage: "arrow.clockwise")
+                            .frame(minWidth: 112)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .help(message)
+                }
+            }
+
+            Spacer(minLength: 4)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 26)
+    }
+
+    private func authHeader(
+        systemImage: String? = nil,
+        title: String,
+        detail: String,
+        iconColor: Color = .blue
+    ) -> some View {
+        VStack(spacing: 7) {
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.system(size: 28, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(iconColor)
+            }
+
+            Text(title)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+
+            Text(detail)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func copyCodexCode(_ code: String?) {
+        guard let code else {
+            return
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(code, forType: .string)
+    }
+
+    private func shortSignInErrorMessage(_ message: String) -> String {
+        if message.localizedCaseInsensitiveContains("Login was not completed") {
+            return "That sign-in expired before Codex finished it."
+        }
+        if message.localizedCaseInsensitiveContains("Timed out") {
+            return "Codex did not respond in time. Try again."
+        }
+        if message.count <= 96 {
+            return message
+        }
+        return "\(message.prefix(93))..."
+    }
+
+    private var syncStatusDisplay: (text: String, systemImage: String, color: Color, help: String) {
+        switch model.quotaSyncStatus {
+        case .localOnly:
+            ("local", "externaldrive", .secondary, "CloudKit sync is disabled for this build")
+        case .syncing:
+            ("syncing", "arrow.triangle.2.circlepath", .secondary, "Syncing quota samples with iCloud")
+        case let .synced(date):
+            (
+                "iCloud \(DateFormatter.panelTime.string(from: date))",
+                "icloud",
+                .secondary,
+                "Quota samples synced with iCloud"
+            )
+        case let .unavailable(message):
+            ("iCloud off", "icloud.slash", .orange, message)
+        case let .failed(message):
+            ("sync failed", "exclamationmark.icloud", .orange, message)
+        }
+    }
+
     private var renewalValue: String {
         guard let resetDate = model.projection.weeklyResetDate else {
+            switch model.codexSignInState {
+            case .needsSignIn, .startingSignIn, .signingIn(_):
+                return "sign in"
+            case .unknown, .signedIn, .failed:
+                break
+            }
             return model.lastQuotaErrorDate == nil ? "--:--" : "offline"
         }
         return DateFormatter.panelDate.string(from: resetDate)
@@ -144,9 +397,9 @@ struct DashboardView: View {
         case .noData:
             "no data"
         case .fine:
-            "fine"
+            "ok"
         case .watch:
-            "watch"
+            "careful"
         case .slowDown:
             "slow down"
         }
@@ -166,7 +419,29 @@ struct DashboardView: View {
     }
 
     private func estimateColor(_ estimate: Double) -> Color {
-        estimate > 100 ? .red : .green
+        if estimate >= 100 {
+            return .red
+        }
+        if estimate >= 90 {
+            return .orange
+        }
+        return .green
+    }
+
+    private func shortQuotaErrorMessage(_ message: String) -> String {
+        if message.localizedCaseInsensitiveContains("Timed out") {
+            return "Codex timeout"
+        }
+        if message.localizedCaseInsensitiveContains("process exited") {
+            return "Codex exited"
+        }
+        if message.localizedCaseInsensitiveContains("process is not running") {
+            return "Codex stopped"
+        }
+        if message.count <= 32 {
+            return message
+        }
+        return "\(message.prefix(29))..."
     }
 }
 
@@ -227,7 +502,8 @@ private struct QuotaGraphView: View {
                     .symbolSize(12)
                 }
 
-                if let projected = projection.projectedWeeklyUsedPercentAtReset {
+                if projection.cycleRunForecast == nil,
+                   let projected = projection.projectedWeeklyUsedPercentAtReset {
                     ForEach(projectionSegments(now: now, resetDate: resetDate, projected: projected)) { segment in
                         ForEach(segment.points) { point in
                             LineMark(
@@ -275,8 +551,6 @@ private struct QuotaGraphView: View {
                             forecast: cycleForecast,
                             startDate: startDate,
                             resetDate: resetDate,
-                            currentDate: actualPoints.last?.date ?? now,
-                            currentUsedPercent: actualPoints.last?.percent ?? graphPercent(projection.currentWeeklyUsedPercent),
                             ceiling: graphCeiling
                         )
                         .allowsHitTesting(false)
@@ -433,8 +707,6 @@ private struct CycleForecastLineOverlay: View {
     let forecast: QuotaCycleRunForecast
     let startDate: Date
     let resetDate: Date
-    let currentDate: Date
-    let currentUsedPercent: Double
     let ceiling: Double
 
     private let threshold = 100.0
@@ -448,48 +720,35 @@ private struct CycleForecastLineOverlay: View {
                     return
                 }
 
-                let averagePath = averagePath(in: size)
+                let forecastPath = forecastPath(in: size)
                 drawThresholded(
-                    path: averagePath,
+                    path: forecastPath,
                     in: size,
                     context: &context,
                     belowColor: .blue.opacity(0.28),
                     aboveColor: .red.opacity(0.46),
                     lineWidth: 4.5,
                     lineCap: .butt,
-                    lineJoin: .bevel
+                    lineJoin: .round
                 )
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
     }
 
-    private func averagePath(in size: CGSize) -> Path {
+    private func forecastPath(in size: CGSize) -> Path {
         var path = Path()
-        var lastEnd: CGPoint?
-        let runs = forecast.averageRuns
+        var hasCurrentPoint = false
+        let segments = forecast.lineSegments
             .sorted { $0.startDate < $1.startDate }
             .filter { $0.endDate > $0.startDate }
 
-        if let first = runs.first {
-            let current = plotPoint(date: currentDate, percent: currentUsedPercent, in: size)
-            let firstStart = plotPoint(date: first.startDate, percent: first.startUsedPercent, in: size)
-            path.move(to: current)
-            path.addLine(to: CGPoint(x: firstStart.x, y: current.y))
-            lastEnd = CGPoint(x: firstStart.x, y: current.y)
-        }
-
-        for run in runs {
-            let start = plotPoint(date: run.startDate, percent: run.startUsedPercent, in: size)
-            let end = plotPoint(date: run.endDate, percent: run.endUsedPercent, in: size)
-            if let lastEnd {
-                let connector = CGPoint(x: start.x, y: lastEnd.y)
-                path.addLine(to: connector)
-            } else {
-                path.move(to: start)
+        for segment in segments {
+            if hasCurrentPoint == false {
+                path.move(to: plotPoint(date: segment.startDate, percent: segment.startUsedPercent, in: size))
+                hasCurrentPoint = true
             }
-            path.addLine(to: end)
-            lastEnd = end
+            path.addLine(to: plotPoint(date: segment.endDate, percent: segment.endUsedPercent, in: size))
         }
         return path
     }

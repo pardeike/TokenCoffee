@@ -15,10 +15,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "61D682DD796FE3CB0D7CC8DA"
-               BuildableName = "TokenHelper.app"
-               BlueprintName = "TokenHelper"
-               ReferencedContainer = "container:TokenHelper.xcodeproj">
+               BlueprintIdentifier = "4BA138AFAA9118242C875A03"
+               BuildableName = "TokenCoffee.app"
+               BlueprintName = "TokenCoffee"
+               ReferencedContainer = "container:TokenCoffee.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
          <BuildActionEntry
@@ -29,10 +29,10 @@
             buildForAnalyzing = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "ABE9407A4CB31BEBE2B45CA5"
-               BuildableName = "TokenHelperCoreTests.xctest"
-               BlueprintName = "TokenHelperCoreTests"
-               ReferencedContainer = "container:TokenHelper.xcodeproj">
+               BlueprintIdentifier = "EF1CDD5BB1E60C3894FC56E9"
+               BuildableName = "TokenCoffeeCoreTests.xctest"
+               BlueprintName = "TokenCoffeeCoreTests"
+               ReferencedContainer = "container:TokenCoffee.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -46,10 +46,10 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "61D682DD796FE3CB0D7CC8DA"
-            BuildableName = "TokenHelper.app"
-            BlueprintName = "TokenHelper"
-            ReferencedContainer = "container:TokenHelper.xcodeproj">
+            BlueprintIdentifier = "4BA138AFAA9118242C875A03"
+            BuildableName = "TokenCoffee.app"
+            BlueprintName = "TokenCoffee"
+            ReferencedContainer = "container:TokenCoffee.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
@@ -58,10 +58,10 @@
             parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "ABE9407A4CB31BEBE2B45CA5"
-               BuildableName = "TokenHelperCoreTests.xctest"
-               BlueprintName = "TokenHelperCoreTests"
-               ReferencedContainer = "container:TokenHelper.xcodeproj">
+               BlueprintIdentifier = "EF1CDD5BB1E60C3894FC56E9"
+               BuildableName = "TokenCoffeeCoreTests.xctest"
+               BlueprintName = "TokenCoffeeCoreTests"
+               ReferencedContainer = "container:TokenCoffee.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -82,10 +82,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "61D682DD796FE3CB0D7CC8DA"
-            BuildableName = "TokenHelper.app"
-            BlueprintName = "TokenHelper"
-            ReferencedContainer = "container:TokenHelper.xcodeproj">
+            BlueprintIdentifier = "4BA138AFAA9118242C875A03"
+            BuildableName = "TokenCoffee.app"
+            BlueprintName = "TokenCoffee"
+            ReferencedContainer = "container:TokenCoffee.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -99,10 +99,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "61D682DD796FE3CB0D7CC8DA"
-            BuildableName = "TokenHelper.app"
-            BlueprintName = "TokenHelper"
-            ReferencedContainer = "container:TokenHelper.xcodeproj">
+            BlueprintIdentifier = "4BA138AFAA9118242C875A03"
+            BuildableName = "TokenCoffee.app"
+            BlueprintName = "TokenCoffee"
+            ReferencedContainer = "container:TokenCoffee.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

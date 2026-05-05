@@ -1,14 +1,14 @@
 import SwiftUI
-import TokenHelperCore
+import TokenCoffeeCore
 
 @main
-struct TokenHelperApplication: App {
+struct TokenCoffeeApplication: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
         if CommandLine.arguments.contains("--reset-clamshell") {
             try? IOKitPowerAssertionClient().setClamshellSleepDisabled(false)
-            TokenHelperDefaults.setClosedDisplayModeEnabled(false)
+            TokenCoffeeDefaults.setClosedDisplayModeEnabled(false)
             Darwin.exit(0)
         }
     }

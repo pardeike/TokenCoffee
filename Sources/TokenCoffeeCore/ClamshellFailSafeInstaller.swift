@@ -1,7 +1,7 @@
 import Foundation
 
 public struct ClamshellFailSafeInstaller: Sendable {
-    public let label = "com.pardeike.TokenHelper.clamshell-failsafe"
+    public let label = "com.pardeike.TokenCoffee.clamshell-failsafe"
 
     public init() {}
 
@@ -11,10 +11,10 @@ public struct ClamshellFailSafeInstaller: Sendable {
             in: .userDomainMask,
             appropriateFor: nil,
             create: true
-        ).appendingPathComponent("TokenHelper", isDirectory: true)
+        ).appendingPathComponent("TokenCoffee", isDirectory: true)
         try fileManager.createDirectory(at: supportURL, withIntermediateDirectories: true)
 
-        let scriptURL = supportURL.appendingPathComponent("tokenhelper-clamshell-failsafe.sh")
+        let scriptURL = supportURL.appendingPathComponent("tokencoffee-clamshell-failsafe.sh")
         let launchAgentDirectory = fileManager.homeDirectoryForCurrentUser
             .appendingPathComponent("Library", isDirectory: true)
             .appendingPathComponent("LaunchAgents", isDirectory: true)
@@ -35,20 +35,20 @@ public struct ClamshellFailSafeInstaller: Sendable {
         let quotedExecutable = shellQuote(executablePath)
         return """
         #!/bin/sh
-        DOMAIN="\(TokenHelperDefaults.domain)"
-        KEY="\(TokenHelperDefaults.closedDisplayModeEnabledKey)"
+        DOMAIN="\(TokenCoffeeDefaults.domain)"
+        KEY="\(TokenCoffeeDefaults.closedDisplayModeEnabledKey)"
         APP=\(quotedExecutable)
 
         enabled=$(/usr/bin/defaults read "$DOMAIN" "$KEY" 2>/dev/null || echo 0)
         [ "$enabled" = "1" ] || exit 0
 
-        if ! /usr/bin/pgrep -x TokenHelper >/dev/null 2>&1; then
+        if ! /usr/bin/pgrep -x "Token Coffee" >/dev/null 2>&1; then
             "$APP" --reset-clamshell >/dev/null 2>&1
             /usr/bin/defaults write "$DOMAIN" "$KEY" -bool false >/dev/null 2>&1
             exit 0
         fi
 
-        if ! /usr/bin/pmset -g assertions 2>/dev/null | /usr/bin/grep -q "TokenHelper"; then
+        if ! /usr/bin/pmset -g assertions 2>/dev/null | /usr/bin/grep -q "Token Coffee"; then
             "$APP" --reset-clamshell >/dev/null 2>&1
             /usr/bin/defaults write "$DOMAIN" "$KEY" -bool false >/dev/null 2>&1
         fi
@@ -106,4 +106,3 @@ public struct ClamshellFailSafeInstaller: Sendable {
         "'\(path.replacingOccurrences(of: "'", with: "'\\''"))'"
     }
 }
-

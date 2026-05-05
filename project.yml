@@ -1,88 +1,144 @@
-name: TokenHelper
+name: TokenCoffee
 options:
   minimumXcodeGenVersion: 2.42.0
   postGenCommand: ./Scripts/patch-iconcomposer-filetype.sh
   deploymentTarget:
-    macOS: "26.0"
+    macOS: "15.0"
+configs:
+  Debug: debug
+  Release: release
 settings:
   base:
     ARCHS: arm64
-    ONLY_ACTIVE_ARCH: YES
     SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
     SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
     GCC_TREAT_WARNINGS_AS_ERRORS: YES
     RUN_CLANG_STATIC_ANALYZER: YES
-    CODE_SIGNING_ALLOWED: NO
-    OTHER_SWIFT_FLAGS:
-      - -strict-concurrency=complete
-      - -warnings-as-errors
+    ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+    DEAD_CODE_STRIPPING: YES
+    ENABLE_MODULE_VERIFIER: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    MODULE_VERIFIER_SUPPORTED_LANGUAGE_STANDARDS: "gnu11 gnu++14"
+    STRING_CATALOG_GENERATE_SYMBOLS: YES
+    OTHER_SWIFT_FLAGS: -strict-concurrency=complete -warnings-as-errors
+  configs:
+    Debug:
+      ONLY_ACTIVE_ARCH: YES
+    Release:
+      ONLY_ACTIVE_ARCH: NO
+packages:
+  CodexAppServerKit:
+    url: https://github.com/pardeike/CodexAppServerKit.git
+    branch: main
 targets:
-  TokenHelperCore:
+  TokenCoffeeCore:
     type: framework
     platform: macOS
     sources:
-      - Sources/TokenHelperCore
+      - Sources/TokenCoffeeCore
     info:
-      path: Sources/TokenHelperCore/Info.plist
+      path: Sources/TokenCoffeeCore/Info.plist
       properties:
-        CFBundleIdentifier: com.pardeike.TokenHelperCore
-        CFBundleName: TokenHelperCore
+        CFBundleIdentifier: com.pardeike.TokenCoffeeCore
+        CFBundleName: TokenCoffeeCore
         CFBundleShortVersionString: "0.1"
         CFBundleVersion: "1"
     dependencies:
+      - package: CodexAppServerKit
+        product: CodexAppServerKit
       - sdk: IOKit.framework
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.pardeike.TokenHelperCore
-  TokenHelper:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pardeike.TokenCoffeeCore
+  TokenCoffee:
     type: application
     platform: macOS
     sources:
-      - path: Sources/TokenHelperApp
+      - path: Sources/TokenCoffeeApp
         excludes:
           - AppIcon.icon
-      - path: Sources/TokenHelperApp/AppIcon.icon
+      - path: Sources/TokenCoffeeApp/AppIcon.icon
         type: file
         buildPhase: resources
     resources:
-      - Sources/TokenHelperApp/Resources
+      - Sources/TokenCoffeeApp/Resources
     dependencies:
-      - target: TokenHelperCore
+      - target: TokenCoffeeCore
       - sdk: SwiftUI.framework
       - sdk: Charts.framework
       - sdk: AppKit.framework
+      - sdk: CloudKit.framework
+      - sdk: Security.framework
+    postBuildScripts:
+      - name: Sign Codex Helper
+        script: ./Scripts/sign-codex-helper.sh
+        inputFiles:
+          - $(SRCROOT)/Vendor/Codex/0.128.0/codex-aarch64-apple-darwin
+          - $(SRCROOT)/Sources/TokenCoffeeApp/CodexHelper.inherit.entitlements
+          - $(SRCROOT)/Scripts/sign-codex-helper.sh
+        outputFiles:
+          - $(TARGET_BUILD_DIR)/$(EXECUTABLE_FOLDER_PATH)/codex
+          - $(DERIVED_FILE_DIR)/codex-helper-entitlements.plist
     info:
-      path: Sources/TokenHelperApp/Info.plist
+      path: Sources/TokenCoffeeApp/Info.plist
       properties:
-        CFBundleIdentifier: com.pardeike.TokenHelper
-        CFBundleName: TokenHelper
-        CFBundleDisplayName: TokenHelper
+        CFBundleIdentifier: com.pardeike.TokenCoffee
+        CFBundleName: Token Coffee
+        CFBundleDisplayName: Token Coffee
         CFBundleIconName: AppIcon
         CFBundleShortVersionString: "0.1"
         CFBundleVersion: "1"
+        LSApplicationCategoryType: public.app-category.developer-tools
         LSUIElement: true
-        LSMinimumSystemVersion: "26.0"
+        LSMinimumSystemVersion: "15.0"
         NSHumanReadableCopyright: "Copyright Andreas Pardeike"
         NSSupportsAutomaticTermination: false
         NSSupportsSuddenTermination: false
     settings:
       base:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        PRODUCT_BUNDLE_IDENTIFIER: com.pardeike.TokenHelper
-  TokenHelperCoreTests:
+        CODE_SIGN_ENTITLEMENTS: Sources/TokenCoffeeApp/TokenCoffee.entitlements
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: W65292CD8T
+        ENABLE_APP_SANDBOX: YES
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_INCOMING_NETWORK_CONNECTIONS: NO
+        ENABLE_OUTGOING_NETWORK_CONNECTIONS: YES
+        ENABLE_RESOURCE_ACCESS_AUDIO_INPUT: NO
+        ENABLE_RESOURCE_ACCESS_BLUETOOTH: NO
+        ENABLE_RESOURCE_ACCESS_CALENDARS: NO
+        ENABLE_RESOURCE_ACCESS_CAMERA: NO
+        ENABLE_RESOURCE_ACCESS_CONTACTS: NO
+        ENABLE_RESOURCE_ACCESS_LOCATION: NO
+        ENABLE_RESOURCE_ACCESS_PRINTING: NO
+        ENABLE_RESOURCE_ACCESS_USB: NO
+        PRODUCT_NAME: Token Coffee
+        PRODUCT_BUNDLE_IDENTIFIER: com.pardeike.TokenCoffee
+        PROVISIONING_PROFILE_SPECIFIER: ""
+      configs:
+        Debug:
+          CLOUDKIT_CONTAINER_ENVIRONMENT: Development
+        Release:
+          CLOUDKIT_CONTAINER_ENVIRONMENT: Production
+  TokenCoffeeCoreTests:
     type: bundle.unit-test
     platform: macOS
     sources:
-      - Tests/TokenHelperCoreTests
+      - Tests/TokenCoffeeCoreTests
     dependencies:
-      - target: TokenHelperCore
+      - target: TokenCoffeeCore
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.pardeike.TokenCoffeeCoreTests
 schemes:
-  TokenHelper:
+  TokenCoffee:
     build:
       targets:
-        TokenHelper: all
-        TokenHelperCoreTests: [test]
+        TokenCoffee: all
+        TokenCoffeeCoreTests: [test]
     test:
       targets:
-        - TokenHelperCoreTests
+        - TokenCoffeeCoreTests

@@ -11,18 +11,49 @@ public struct QuotaCycleRunForecast: Equatable, Sendable {
     public let projectedWeeklyUsedPercentAtReset: Double
     public let ghostRuns: [QuotaForecastRun]
     public let averageRuns: [QuotaForecastRun]
+    public let lineSegments: [QuotaForecastLineSegment]
     public let corridorPoints: [QuotaForecastCorridorPoint]
 
     public init(
         projectedWeeklyUsedPercentAtReset: Double,
         ghostRuns: [QuotaForecastRun],
         averageRuns: [QuotaForecastRun] = [],
+        lineSegments: [QuotaForecastLineSegment] = [],
         corridorPoints: [QuotaForecastCorridorPoint]
     ) {
         self.projectedWeeklyUsedPercentAtReset = projectedWeeklyUsedPercentAtReset
         self.ghostRuns = ghostRuns
         self.averageRuns = averageRuns
+        self.lineSegments = lineSegments
         self.corridorPoints = corridorPoints
+    }
+}
+
+public enum QuotaForecastLineSegmentKind: String, Equatable, Sendable {
+    case projectedIdle
+    case projectedActivity
+    case currentProjectedActivity
+}
+
+public struct QuotaForecastLineSegment: Equatable, Sendable {
+    public let startDate: Date
+    public let endDate: Date
+    public let startUsedPercent: Double
+    public let endUsedPercent: Double
+    public let kind: QuotaForecastLineSegmentKind
+
+    public init(
+        startDate: Date,
+        endDate: Date,
+        startUsedPercent: Double,
+        endUsedPercent: Double,
+        kind: QuotaForecastLineSegmentKind
+    ) {
+        self.startDate = startDate
+        self.endDate = endDate
+        self.startUsedPercent = startUsedPercent
+        self.endUsedPercent = endUsedPercent
+        self.kind = kind
     }
 }
 
@@ -154,7 +185,7 @@ public enum QuotaProjectionEngine {
             now: now,
             samples: currentWindowSamples
         )
-        let state = paceState(current: current, ideal: ideal, projected: projected)
+        let state = paceState(current: current, projected: projected)
 
         return QuotaProjection(
             currentWeeklyUsedPercent: current,
@@ -335,6 +366,12 @@ public enum QuotaProjectionEngine {
         }
 
         let averageRuns = forecastRuns(current: current, events: scheduled.average)
+        let lineSegments = forecastLineSegments(
+            current: current,
+            now: now,
+            resetDate: resetDate,
+            events: scheduled.average
+        )
         let ghostRuns = scheduledGhostRuns(
             clusters: clusters,
             averageEvents: scheduled.average,
@@ -368,6 +405,7 @@ public enum QuotaProjectionEngine {
             projectedWeeklyUsedPercentAtReset: projected,
             ghostRuns: ghostRuns,
             averageRuns: averageRuns,
+            lineSegments: lineSegments,
             corridorPoints: corridorPoints
         )
     }
@@ -598,6 +636,98 @@ public enum QuotaProjectionEngine {
         }
     }
 
+    private static func forecastLineSegments(
+        current: Double,
+        now: Date,
+        resetDate: Date,
+        events: [ScheduledForecastRun]
+    ) -> [QuotaForecastLineSegment] {
+        var segments: [QuotaForecastLineSegment] = []
+        var cursorDate = now
+        var cursorPercent = current
+
+        for event in events.sorted(by: { $0.startDate < $1.startDate }) where event.endDate > cursorDate {
+            if event.startDate > cursorDate {
+                appendForecastLineSegment(
+                    startDate: cursorDate,
+                    endDate: event.startDate,
+                    startUsedPercent: cursorPercent,
+                    endUsedPercent: cursorPercent,
+                    kind: .projectedIdle,
+                    into: &segments
+                )
+                cursorDate = event.startDate
+            }
+
+            let activityStartDate = max(cursorDate, event.startDate)
+            let activityGain = event.gain(from: activityStartDate)
+            let activityKind: QuotaForecastLineSegmentKind = abs(activityStartDate.timeIntervalSince(now)) < 0.5
+                ? .currentProjectedActivity
+                : .projectedActivity
+
+            appendForecastLineSegment(
+                startDate: activityStartDate,
+                endDate: event.endDate,
+                startUsedPercent: cursorPercent,
+                endUsedPercent: cursorPercent + activityGain,
+                kind: activityKind,
+                into: &segments
+            )
+            cursorDate = event.endDate
+            cursorPercent += activityGain
+        }
+
+        if resetDate > cursorDate {
+            appendForecastLineSegment(
+                startDate: cursorDate,
+                endDate: resetDate,
+                startUsedPercent: cursorPercent,
+                endUsedPercent: cursorPercent,
+                kind: .projectedIdle,
+                into: &segments
+            )
+        }
+
+        return segments
+    }
+
+    private static func appendForecastLineSegment(
+        startDate: Date,
+        endDate: Date,
+        startUsedPercent: Double,
+        endUsedPercent: Double,
+        kind: QuotaForecastLineSegmentKind,
+        into segments: inout [QuotaForecastLineSegment]
+    ) {
+        guard endDate > startDate else {
+            return
+        }
+
+        let segment = QuotaForecastLineSegment(
+            startDate: startDate,
+            endDate: endDate,
+            startUsedPercent: startUsedPercent,
+            endUsedPercent: endUsedPercent,
+            kind: kind
+        )
+
+        if let last = segments.last,
+           last.kind == segment.kind,
+           abs(last.endDate.timeIntervalSince(segment.startDate)) < 0.5,
+           abs(last.endUsedPercent - segment.startUsedPercent) < 0.001 {
+            segments[segments.count - 1] = QuotaForecastLineSegment(
+                startDate: last.startDate,
+                endDate: segment.endDate,
+                startUsedPercent: last.startUsedPercent,
+                endUsedPercent: segment.endUsedPercent,
+                kind: last.kind
+            )
+            return
+        }
+
+        segments.append(segment)
+    }
+
     private static func scheduledForecastRun(
         cycleStart: Date,
         startOffset: TimeInterval,
@@ -720,11 +850,11 @@ public enum QuotaProjectionEngine {
         return (mean + median) / 2
     }
 
-    private static func paceState(current: Double, ideal: Double, projected: Double) -> QuotaPaceState {
+    private static func paceState(current: Double, projected: Double) -> QuotaPaceState {
         if projected >= 100 || current >= 100 {
             return .slowDown
         }
-        if projected >= 90 || current > ideal + 10 {
+        if projected >= 90 {
             return .watch
         }
         return .fine
@@ -739,7 +869,7 @@ public enum QuotaProjectionEngine {
 
     private static let minimumUsageDelta: Double = 0.05
     private static let minimumBurstHistorySeconds: TimeInterval = 6 * 60 * 60
-    private static let burstMergeGapSeconds: TimeInterval = 45 * 60
+    private static let burstMergeGapSeconds: TimeInterval = 90 * 60
     private static let activeBurstGraceSeconds: TimeInterval = 10 * 60
     private static let minimumExpectedBurstSeconds: TimeInterval = 30 * 60
     private static let maximumBurstContinuationSeconds: TimeInterval = 30 * 60
@@ -847,6 +977,11 @@ private struct ScheduledForecastRun {
     let startDate: Date
     let endDate: Date
     let gain: Double
+
+    func gain(from date: Date) -> Double {
+        let remainingDuration = max(0, endDate.timeIntervalSince(max(date, startDate)))
+        return gain * min(1, remainingDuration / max(1, endDate.timeIntervalSince(startDate)))
+    }
 
     func progress(at date: Date) -> Double {
         if date <= startDate {

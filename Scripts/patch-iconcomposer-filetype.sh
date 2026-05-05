@@ -3,7 +3,7 @@ set -eu
 
 cd "$(dirname "$0")/.."
 
-PROJECT_FILE="TokenHelper.xcodeproj/project.pbxproj"
+PROJECT_FILE="TokenCoffee.xcodeproj/project.pbxproj"
 
 if [ ! -f "$PROJECT_FILE" ]; then
   printf '%s\n' "Missing $PROJECT_FILE" >&2

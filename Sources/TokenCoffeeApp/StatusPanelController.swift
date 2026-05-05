@@ -1,7 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
-import TokenHelperCore
+import TokenCoffeeCore
 
 @MainActor
 final class StatusPanelController: NSObject, NSWindowDelegate {
