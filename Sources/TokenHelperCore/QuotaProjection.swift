@@ -7,10 +7,65 @@ public enum QuotaPaceState: String, Codable, Equatable, Sendable {
     case slowDown
 }
 
+public struct QuotaCycleRunForecast: Equatable, Sendable {
+    public let projectedWeeklyUsedPercentAtReset: Double
+    public let ghostRuns: [QuotaForecastRun]
+    public let corridorPoints: [QuotaForecastCorridorPoint]
+
+    public init(
+        projectedWeeklyUsedPercentAtReset: Double,
+        ghostRuns: [QuotaForecastRun],
+        corridorPoints: [QuotaForecastCorridorPoint]
+    ) {
+        self.projectedWeeklyUsedPercentAtReset = projectedWeeklyUsedPercentAtReset
+        self.ghostRuns = ghostRuns
+        self.corridorPoints = corridorPoints
+    }
+}
+
+public struct QuotaForecastRun: Equatable, Sendable {
+    public let startDate: Date
+    public let endDate: Date
+    public let startUsedPercent: Double
+    public let endUsedPercent: Double
+
+    public init(
+        startDate: Date,
+        endDate: Date,
+        startUsedPercent: Double,
+        endUsedPercent: Double
+    ) {
+        self.startDate = startDate
+        self.endDate = endDate
+        self.startUsedPercent = startUsedPercent
+        self.endUsedPercent = endUsedPercent
+    }
+}
+
+public struct QuotaForecastCorridorPoint: Equatable, Sendable {
+    public let date: Date
+    public let averageUsedPercent: Double
+    public let lowerUsedPercent: Double
+    public let upperUsedPercent: Double
+
+    public init(
+        date: Date,
+        averageUsedPercent: Double,
+        lowerUsedPercent: Double,
+        upperUsedPercent: Double
+    ) {
+        self.date = date
+        self.averageUsedPercent = averageUsedPercent
+        self.lowerUsedPercent = lowerUsedPercent
+        self.upperUsedPercent = upperUsedPercent
+    }
+}
+
 public struct QuotaProjection: Equatable, Sendable {
     public let currentWeeklyUsedPercent: Double
     public let idealWeeklyUsedPercent: Double?
     public let projectedWeeklyUsedPercentAtReset: Double?
+    public let cycleRunForecast: QuotaCycleRunForecast?
     public let weeklyResetDate: Date?
     public let weeklyWindowStartDate: Date?
     public let paceState: QuotaPaceState
@@ -19,6 +74,7 @@ public struct QuotaProjection: Equatable, Sendable {
         currentWeeklyUsedPercent: Double,
         idealWeeklyUsedPercent: Double?,
         projectedWeeklyUsedPercentAtReset: Double?,
+        cycleRunForecast: QuotaCycleRunForecast? = nil,
         weeklyResetDate: Date?,
         weeklyWindowStartDate: Date?,
         paceState: QuotaPaceState
@@ -26,6 +82,7 @@ public struct QuotaProjection: Equatable, Sendable {
         self.currentWeeklyUsedPercent = currentWeeklyUsedPercent
         self.idealWeeklyUsedPercent = idealWeeklyUsedPercent
         self.projectedWeeklyUsedPercentAtReset = projectedWeeklyUsedPercentAtReset
+        self.cycleRunForecast = cycleRunForecast
         self.weeklyResetDate = weeklyResetDate
         self.weeklyWindowStartDate = weeklyWindowStartDate
         self.paceState = paceState
@@ -87,12 +144,20 @@ public enum QuotaProjectionEngine {
             now: now,
             samples: currentWindowSamples
         )
+        let cycleForecast = cycleRunForecast(
+            current: current,
+            startDate: startDate,
+            resetDate: resetDate,
+            now: now,
+            samples: currentWindowSamples
+        )
         let state = paceState(current: current, ideal: ideal, projected: projected)
 
         return QuotaProjection(
             currentWeeklyUsedPercent: current,
             idealWeeklyUsedPercent: ideal,
             projectedWeeklyUsedPercentAtReset: projected,
+            cycleRunForecast: cycleForecast,
             weeklyResetDate: resetDate,
             weeklyWindowStartDate: startDate,
             paceState: state
@@ -171,6 +236,12 @@ public enum QuotaProjectionEngine {
     }
 
     private static func usageBursts(from samples: [QuotaSample]) -> [UsageBurst] {
+        usageBursts(from: samples.map {
+            UsageSample(capturedAt: $0.capturedAt, weeklyUsedPercent: $0.weeklyUsedPercent)
+        })
+    }
+
+    private static func usageBursts(from samples: [UsageSample]) -> [UsageBurst] {
         var bursts: [UsageBurst] = []
         for index in 1..<samples.count {
             let previous = samples[index - 1]
@@ -195,6 +266,389 @@ public enum QuotaProjectionEngine {
             }
         }
         return bursts
+    }
+
+    private static func cycleRunForecast(
+        current: Double,
+        startDate: Date,
+        resetDate: Date,
+        now: Date,
+        samples: [QuotaSample]
+    ) -> QuotaCycleRunForecast? {
+        guard now < resetDate,
+              samples.count >= 2 else {
+            return nil
+        }
+
+        let usageSamples = normalizedUsageSamples(samples: samples, current: current, now: now)
+        let runs = usageBursts(from: usageSamples)
+        guard runs.isEmpty == false else {
+            return nil
+        }
+
+        let observations = runs.compactMap {
+            cycleRunObservation(for: $0, weeklyStartDate: startDate)
+        }
+        guard observations.isEmpty == false else {
+            return nil
+        }
+
+        let clusters = clusteredRunObservations(observations)
+        guard clusters.isEmpty == false else {
+            return nil
+        }
+
+        let currentCycle = cycleIndex(for: now, weeklyStartDate: startDate)
+        let currentCycleStart = cycleStartDate(weeklyStartDate: startDate, cycleIndex: currentCycle)
+        let currentCycleGain = usageGain(
+            from: usageSamples,
+            startDate: currentCycleStart,
+            endDate: now
+        )
+        let historicalGain = historicalCycleGain(observations, before: currentCycle)
+        let fallbackGain = robustAverage(cycleGains(from: observations))
+        let effectiveHistoricalGain = historicalGain > 0 ? historicalGain : fallbackGain
+        let dailyGain = blendedDailyGain(currentGain: currentCycleGain, historicalGain: effectiveHistoricalGain)
+        guard dailyGain >= minimumUsageDelta else {
+            return nil
+        }
+
+        let clusterGainTotal = clusters.reduce(0) { $0 + $1.averageGain }
+        guard clusterGainTotal >= minimumUsageDelta else {
+            return nil
+        }
+
+        let scheduled = scheduledForecastRuns(
+            clusters: clusters,
+            dailyGain: dailyGain,
+            clusterGainTotal: clusterGainTotal,
+            weeklyStartDate: startDate,
+            currentCycle: currentCycle,
+            now: now,
+            resetDate: resetDate
+        )
+        guard scheduled.average.isEmpty == false else {
+            return nil
+        }
+
+        let ghostRuns = scheduledGhostRuns(
+            clusters: clusters,
+            averageEvents: scheduled.average,
+            dailyGain: dailyGain,
+            clusterGainTotal: clusterGainTotal,
+            weeklyStartDate: startDate,
+            currentCycle: currentCycle,
+            now: now,
+            resetDate: resetDate,
+            current: current
+        )
+        let timepoints = forecastTimepoints(
+            now: now,
+            resetDate: resetDate,
+            eventGroups: [scheduled.average, scheduled.earliest, scheduled.latest]
+        )
+        let corridorPoints = timepoints.map { date in
+            let average = forecastPercent(at: date, current: current, events: scheduled.average)
+            let earliest = forecastPercent(at: date, current: current, events: scheduled.earliest)
+            let latest = forecastPercent(at: date, current: current, events: scheduled.latest)
+            return QuotaForecastCorridorPoint(
+                date: date,
+                averageUsedPercent: average,
+                lowerUsedPercent: min(earliest, latest),
+                upperUsedPercent: max(earliest, latest)
+            )
+        }
+        let projected = forecastPercent(at: resetDate, current: current, events: scheduled.average)
+
+        return QuotaCycleRunForecast(
+            projectedWeeklyUsedPercentAtReset: projected,
+            ghostRuns: ghostRuns,
+            corridorPoints: corridorPoints
+        )
+    }
+
+    private static func normalizedUsageSamples(
+        samples: [QuotaSample],
+        current: Double,
+        now: Date
+    ) -> [UsageSample] {
+        var usageSamples = samples.map {
+            UsageSample(capturedAt: $0.capturedAt, weeklyUsedPercent: $0.weeklyUsedPercent)
+        }
+        if let lastSample = usageSamples.last,
+           now > lastSample.capturedAt,
+           abs(current - lastSample.weeklyUsedPercent) > 0.0001 {
+            usageSamples.append(UsageSample(capturedAt: now, weeklyUsedPercent: current))
+        }
+        return usageSamples.sorted { $0.capturedAt < $1.capturedAt }
+    }
+
+    private static func cycleRunObservation(
+        for run: UsageBurst,
+        weeklyStartDate: Date
+    ) -> CycleRunObservation? {
+        let cycleIndex = cycleIndex(for: run.startDate, weeklyStartDate: weeklyStartDate)
+        let cycleStart = cycleStartDate(weeklyStartDate: weeklyStartDate, cycleIndex: cycleIndex)
+        let startOffset = run.startDate.timeIntervalSince(cycleStart)
+        let endOffset = run.endDate.timeIntervalSince(cycleStart)
+        guard endOffset > startOffset,
+              startOffset >= 0,
+              startOffset < dayDuration * 2 else {
+            return nil
+        }
+
+        return CycleRunObservation(
+            cycleIndex: cycleIndex,
+            startOffset: startOffset,
+            endOffset: endOffset,
+            gain: run.usedPercentGain
+        )
+    }
+
+    private static func clusteredRunObservations(_ observations: [CycleRunObservation]) -> [CycleRunCluster] {
+        var clusters: [CycleRunCluster] = []
+        for observation in observations.sorted(by: { $0.startOffset < $1.startOffset }) {
+            let matchingIndex = clusters.indices.min { lhs, rhs in
+                abs(clusters[lhs].averageStartOffset - observation.startOffset)
+                    < abs(clusters[rhs].averageStartOffset - observation.startOffset)
+            }.flatMap { index -> Int? in
+                abs(clusters[index].averageStartOffset - observation.startOffset) <= runClusterStartToleranceSeconds
+                    ? index
+                    : nil
+            }
+
+            if let matchingIndex {
+                clusters[matchingIndex].append(observation)
+            } else {
+                clusters.append(CycleRunCluster(observation: observation))
+            }
+        }
+        return clusters.sorted { $0.averageStartOffset < $1.averageStartOffset }
+    }
+
+    private static func usageGain(
+        from samples: [UsageSample],
+        startDate: Date,
+        endDate: Date
+    ) -> Double {
+        guard endDate > startDate else {
+            return 0
+        }
+
+        var gain = 0.0
+        for index in 1..<samples.count {
+            let previous = samples[index - 1]
+            let current = samples[index]
+            guard current.capturedAt > startDate,
+                  current.capturedAt <= endDate,
+                  current.capturedAt > previous.capturedAt else {
+                continue
+            }
+
+            gain += max(0, current.weeklyUsedPercent - previous.weeklyUsedPercent)
+        }
+        return gain
+    }
+
+    private static func historicalCycleGain(
+        _ observations: [CycleRunObservation],
+        before currentCycle: Int
+    ) -> Double {
+        let gains = cycleGains(from: observations.filter { $0.cycleIndex < currentCycle })
+        return robustAverage(gains)
+    }
+
+    private static func cycleGains(from observations: [CycleRunObservation]) -> [Double] {
+        let grouped = Dictionary(grouping: observations, by: \.cycleIndex)
+        return grouped.values
+            .map { cycleObservations in
+                cycleObservations.reduce(0) { $0 + $1.gain }
+            }
+            .filter { $0 >= minimumUsageDelta }
+    }
+
+    private static func blendedDailyGain(currentGain: Double, historicalGain: Double) -> Double {
+        if currentGain >= minimumUsageDelta, historicalGain >= minimumUsageDelta {
+            return currentGainWeight * currentGain + (1 - currentGainWeight) * historicalGain
+        }
+        if currentGain >= minimumUsageDelta {
+            return currentGain
+        }
+        return historicalGain
+    }
+
+    private static func scheduledForecastRuns(
+        clusters: [CycleRunCluster],
+        dailyGain: Double,
+        clusterGainTotal: Double,
+        weeklyStartDate: Date,
+        currentCycle: Int,
+        now: Date,
+        resetDate: Date
+    ) -> ForecastSchedule {
+        var average: [ScheduledForecastRun] = []
+        var earliest: [ScheduledForecastRun] = []
+        var latest: [ScheduledForecastRun] = []
+
+        for cycle in currentCycle..<7 {
+            let cycleStart = cycleStartDate(weeklyStartDate: weeklyStartDate, cycleIndex: cycle)
+            for cluster in clusters {
+                let gain = dailyGain * (cluster.averageGain / clusterGainTotal)
+                if let event = scheduledForecastRun(
+                    cycleStart: cycleStart,
+                    startOffset: cluster.averageStartOffset,
+                    endOffset: cluster.averageEndOffset,
+                    gain: gain,
+                    now: now,
+                    resetDate: resetDate
+                ) {
+                    average.append(event)
+                }
+                if let event = scheduledForecastRun(
+                    cycleStart: cycleStart,
+                    startOffset: cluster.minimumStartOffset,
+                    endOffset: cluster.minimumEndOffset,
+                    gain: gain,
+                    now: now,
+                    resetDate: resetDate
+                ) {
+                    earliest.append(event)
+                }
+                if let event = scheduledForecastRun(
+                    cycleStart: cycleStart,
+                    startOffset: cluster.maximumStartOffset,
+                    endOffset: cluster.maximumEndOffset,
+                    gain: gain,
+                    now: now,
+                    resetDate: resetDate
+                ) {
+                    latest.append(event)
+                }
+            }
+        }
+
+        return ForecastSchedule(
+            average: average.sorted { $0.startDate < $1.startDate },
+            earliest: earliest.sorted { $0.startDate < $1.startDate },
+            latest: latest.sorted { $0.startDate < $1.startDate }
+        )
+    }
+
+    private static func scheduledGhostRuns(
+        clusters: [CycleRunCluster],
+        averageEvents: [ScheduledForecastRun],
+        dailyGain: Double,
+        clusterGainTotal: Double,
+        weeklyStartDate: Date,
+        currentCycle: Int,
+        now: Date,
+        resetDate: Date,
+        current: Double
+    ) -> [QuotaForecastRun] {
+        var ghostRuns: [QuotaForecastRun] = []
+        for cycle in currentCycle..<7 {
+            let cycleStart = cycleStartDate(weeklyStartDate: weeklyStartDate, cycleIndex: cycle)
+            for cluster in clusters {
+                let clusterGain = dailyGain * (cluster.averageGain / clusterGainTotal)
+                for observation in cluster.observations {
+                    let observationGain = observation.gain * clusterGain / max(cluster.averageGain, minimumUsageDelta)
+                    guard let event = scheduledForecastRun(
+                        cycleStart: cycleStart,
+                        startOffset: observation.startOffset,
+                        endOffset: observation.endOffset,
+                        gain: observationGain,
+                        now: now,
+                        resetDate: resetDate
+                    ) else {
+                        continue
+                    }
+
+                    let startUsedPercent = forecastPercent(at: event.startDate, current: current, events: averageEvents)
+                    ghostRuns.append(
+                        QuotaForecastRun(
+                            startDate: event.startDate,
+                            endDate: event.endDate,
+                            startUsedPercent: startUsedPercent,
+                            endUsedPercent: startUsedPercent + event.gain
+                        )
+                    )
+                }
+            }
+        }
+        return ghostRuns.sorted { $0.startDate < $1.startDate }
+    }
+
+    private static func scheduledForecastRun(
+        cycleStart: Date,
+        startOffset: TimeInterval,
+        endOffset: TimeInterval,
+        gain: Double,
+        now: Date,
+        resetDate: Date
+    ) -> ScheduledForecastRun? {
+        let originalStart = cycleStart.addingTimeInterval(startOffset)
+        let originalEnd = cycleStart.addingTimeInterval(max(endOffset, startOffset + minimumExpectedBurstSeconds))
+        guard originalEnd > now,
+              originalStart < resetDate else {
+            return nil
+        }
+
+        let start = max(originalStart, now)
+        let end = min(originalEnd, resetDate)
+        guard end > start else {
+            return nil
+        }
+
+        let originalDuration = max(1, originalEnd.timeIntervalSince(originalStart))
+        let remainingDuration = end.timeIntervalSince(start)
+        let remainingGain = gain * remainingDuration / originalDuration
+        guard remainingGain >= minimumUsageDelta else {
+            return nil
+        }
+
+        return ScheduledForecastRun(startDate: start, endDate: end, gain: remainingGain)
+    }
+
+    private static func forecastTimepoints(
+        now: Date,
+        resetDate: Date,
+        eventGroups: [[ScheduledForecastRun]]
+    ) -> [Date] {
+        var dates = [now, resetDate]
+        for event in eventGroups.flatMap(\.self) {
+            dates.append(event.startDate)
+            dates.append(event.endDate)
+        }
+
+        let sorted = dates.sorted()
+        var unique: [Date] = []
+        for date in sorted {
+            guard let last = unique.last,
+                  abs(last.timeIntervalSince(date)) < 0.5 else {
+                unique.append(date)
+                continue
+            }
+        }
+        return unique
+    }
+
+    private static func forecastPercent(
+        at date: Date,
+        current: Double,
+        events: [ScheduledForecastRun]
+    ) -> Double {
+        events.reduce(current) { total, event in
+            total + event.gain * event.progress(at: date)
+        }
+    }
+
+    private static func cycleIndex(for date: Date, weeklyStartDate: Date) -> Int {
+        let rawIndex = Int(floor(date.timeIntervalSince(weeklyStartDate) / dayDuration))
+        return min(6, max(0, rawIndex))
+    }
+
+    private static func cycleStartDate(weeklyStartDate: Date, cycleIndex: Int) -> Date {
+        weeklyStartDate.addingTimeInterval(TimeInterval(cycleIndex) * dayDuration)
     }
 
     private static func currentBurstContinuationGain(
@@ -269,6 +723,14 @@ public enum QuotaProjectionEngine {
     private static let activeBurstGraceSeconds: TimeInterval = 10 * 60
     private static let minimumExpectedBurstSeconds: TimeInterval = 30 * 60
     private static let maximumBurstContinuationSeconds: TimeInterval = 30 * 60
+    private static let dayDuration: TimeInterval = 24 * 60 * 60
+    private static let runClusterStartToleranceSeconds: TimeInterval = 3 * 60 * 60
+    private static let currentGainWeight = 0.65
+}
+
+private struct UsageSample {
+    let capturedAt: Date
+    let weeklyUsedPercent: Double
 }
 
 private struct UsageInterval {
@@ -298,5 +760,81 @@ private struct UsageBurst {
         endDate = interval.endDate
         usedPercentGain += interval.usedPercentGain
         activeDuration += interval.duration
+    }
+}
+
+private struct CycleRunObservation {
+    let cycleIndex: Int
+    let startOffset: TimeInterval
+    let endOffset: TimeInterval
+    let gain: Double
+}
+
+private struct CycleRunCluster {
+    private(set) var observations: [CycleRunObservation]
+
+    init(observation: CycleRunObservation) {
+        self.observations = [observation]
+    }
+
+    mutating func append(_ observation: CycleRunObservation) {
+        observations.append(observation)
+    }
+
+    var averageStartOffset: TimeInterval {
+        average(observations.map(\.startOffset))
+    }
+
+    var averageEndOffset: TimeInterval {
+        max(averageStartOffset + 1, average(observations.map(\.endOffset)))
+    }
+
+    var minimumStartOffset: TimeInterval {
+        observations.map(\.startOffset).min() ?? averageStartOffset
+    }
+
+    var maximumStartOffset: TimeInterval {
+        observations.map(\.startOffset).max() ?? averageStartOffset
+    }
+
+    var minimumEndOffset: TimeInterval {
+        max(minimumStartOffset + 1, observations.map(\.endOffset).min() ?? averageEndOffset)
+    }
+
+    var maximumEndOffset: TimeInterval {
+        max(maximumStartOffset + 1, observations.map(\.endOffset).max() ?? averageEndOffset)
+    }
+
+    var averageGain: Double {
+        average(observations.map(\.gain))
+    }
+
+    private func average(_ values: [Double]) -> Double {
+        guard values.isEmpty == false else {
+            return 0
+        }
+        return values.reduce(0, +) / Double(values.count)
+    }
+}
+
+private struct ForecastSchedule {
+    let average: [ScheduledForecastRun]
+    let earliest: [ScheduledForecastRun]
+    let latest: [ScheduledForecastRun]
+}
+
+private struct ScheduledForecastRun {
+    let startDate: Date
+    let endDate: Date
+    let gain: Double
+
+    func progress(at date: Date) -> Double {
+        if date <= startDate {
+            return 0
+        }
+        if date >= endDate {
+            return 1
+        }
+        return date.timeIntervalSince(startDate) / max(1, endDate.timeIntervalSince(startDate))
     }
 }

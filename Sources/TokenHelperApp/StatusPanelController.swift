@@ -14,7 +14,7 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         self.model = model
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.panel = PersistentPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 272),
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 272),
             styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
             defer: false

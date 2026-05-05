@@ -21,7 +21,7 @@ struct DashboardView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .frame(width: 320, height: 272, alignment: .topLeading)
+        .frame(width: 480, height: 272, alignment: .topLeading)
         .background(.regularMaterial)
     }
 
@@ -74,16 +74,18 @@ struct DashboardView: View {
 
     private var quotaReadout: some View {
         let projection = model.projection
+        let estimate = projection.cycleRunForecast?.projectedWeeklyUsedPercentAtReset
+        let readoutColor = estimate.map(estimateColor) ?? paceColor(projection.paceState)
         return HStack(alignment: .lastTextBaseline, spacing: 8) {
             Text(percent(projection.currentWeeklyUsedPercent))
                 .font(.system(size: 32, weight: .semibold, design: .rounded).monospacedDigit())
-                .foregroundStyle(paceColor(projection.paceState))
+                .foregroundStyle(readoutColor)
 
-            if let projected = projection.projectedWeeklyUsedPercentAtReset {
-                Text("-> \(percent(projected))")
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .help("Projected weekly usage at renew")
+            if let estimate {
+                Text("estimate \(percent(estimate))")
+                    .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .help("Cycle-run forecast at renew")
             }
 
             Spacer()
@@ -162,6 +164,10 @@ struct DashboardView: View {
             .red
         }
     }
+
+    private func estimateColor(_ estimate: Double) -> Color {
+        estimate > 100 ? .red : .green
+    }
 }
 
 private struct QuotaGraphView: View {
@@ -190,14 +196,40 @@ private struct QuotaGraphView: View {
                         .lineStyle(StrokeStyle(lineWidth: 0.5))
                 }
 
-                ForEach(idealPoints(now: now, resetDate: resetDate)) { point in
-                    LineMark(
-                        x: .value("Time", point.date),
-                        y: .value("Percent", point.percent),
-                        series: .value("Series", point.series)
-                    )
-                    .foregroundStyle(Color.white.opacity(0.22))
-                    .lineStyle(StrokeStyle(lineWidth: 1))
+                if let cycleForecast = projection.cycleRunForecast {
+                    ForEach(cycleForecastGhostSegments(cycleForecast)) { segment in
+                        ForEach(segment.points) { point in
+                            LineMark(
+                                x: .value("Time", point.date),
+                                y: .value("Percent", point.percent),
+                                series: .value("Series", segment.id)
+                            )
+                            .foregroundStyle(segment.color)
+                            .lineStyle(StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
+                        }
+                    }
+
+                    ForEach(cycleForecast.corridorPoints, id: \.date) { point in
+                        AreaMark(
+                            x: .value("Time", point.date),
+                            yStart: .value("Low", graphPercent(point.lowerUsedPercent)),
+                            yEnd: .value("High", graphPercent(point.upperUsedPercent))
+                        )
+                        .foregroundStyle(Color.blue.opacity(0.11))
+                        .interpolationMethod(.linear)
+                    }
+
+                    ForEach(cycleForecastAverageSegments(cycleForecast)) { segment in
+                        ForEach(segment.points) { point in
+                            LineMark(
+                                x: .value("Time", point.date),
+                                y: .value("Percent", point.percent),
+                                series: .value("Series", segment.id)
+                            )
+                            .foregroundStyle(segment.color)
+                            .lineStyle(StrokeStyle(lineWidth: 4.5, lineCap: .round, lineJoin: .round))
+                        }
+                    }
                 }
 
                 ForEach(actualPoints) { point in
@@ -312,18 +344,6 @@ private struct QuotaGraphView: View {
         return stored
     }
 
-    private func idealPoints(now: Date, resetDate: Date) -> [GraphPoint] {
-        guard now < resetDate,
-              projection.currentWeeklyUsedPercent < 100 else {
-            return []
-        }
-
-        return [
-            GraphPoint(date: now, percent: graphPercent(projection.currentWeeklyUsedPercent), series: "ideal"),
-            GraphPoint(date: resetDate, percent: 100, series: "ideal")
-        ]
-    }
-
     private func projectionSegments(now: Date, resetDate: Date, projected: Double) -> [ProjectionSegment] {
         let current = projection.currentWeeklyUsedPercent
         let totalDuration = resetDate.timeIntervalSince(now)
@@ -341,23 +361,23 @@ private struct QuotaGraphView: View {
         )
 
         if current >= 100 {
-            return [ProjectionSegment(id: "projected-over", color: .red, points: [startPoint, visibleEndPoint])]
+            return [ProjectionSegment(id: "projected-over", color: Color.red.opacity(0.6), points: [startPoint, visibleEndPoint])]
         }
 
         if projected <= current {
-            return [ProjectionSegment(id: "projected-safe", color: .yellow, points: [startPoint, visibleEndPoint])]
+            return [ProjectionSegment(id: "projected-safe", color: Color.yellow.opacity(0.36), points: [startPoint, visibleEndPoint])]
         }
 
         guard projected > 100 else {
-            return [ProjectionSegment(id: "projected-safe", color: .yellow, points: [startPoint, visibleEndPoint])]
+            return [ProjectionSegment(id: "projected-safe", color: Color.yellow.opacity(0.36), points: [startPoint, visibleEndPoint])]
         }
 
         let crossingFraction = (100 - current) / (projected - current)
         let crossingDate = now.addingTimeInterval(totalDuration * crossingFraction)
         let crossingPoint = GraphPoint(date: crossingDate, percent: 100, series: "projected-crossing")
         return [
-            ProjectionSegment(id: "projected-safe", color: .yellow, points: [startPoint, crossingPoint]),
-            ProjectionSegment(id: "projected-over", color: .red, points: [crossingPoint, visibleEndPoint])
+            ProjectionSegment(id: "projected-safe", color: Color.yellow.opacity(0.36), points: [startPoint, crossingPoint]),
+            ProjectionSegment(id: "projected-over", color: Color.red.opacity(0.6), points: [crossingPoint, visibleEndPoint])
         ]
     }
 
@@ -376,6 +396,124 @@ private struct QuotaGraphView: View {
         let ceilingFraction = (graphCeiling - current) / (projected - current)
         let ceilingDate = now.addingTimeInterval(totalDuration * ceilingFraction)
         return GraphPoint(date: ceilingDate, percent: graphCeiling, series: "projected-ceiling")
+    }
+
+    private func cycleForecastGhostSegments(_ forecast: QuotaCycleRunForecast) -> [ProjectionSegment] {
+        forecast.ghostRuns.enumerated().flatMap { index, run -> [ProjectionSegment] in
+            guard run.endDate > run.startDate else {
+                return []
+            }
+
+            let id = "cycle-run-\(index)"
+            return thresholdSegments(
+                id: id,
+                points: [
+                    GraphPoint(date: run.startDate, percent: run.startUsedPercent, series: id),
+                    GraphPoint(date: run.endDate, percent: run.endUsedPercent, series: id)
+                ],
+                belowColor: Color.blue.opacity(0.11),
+                aboveColor: Color.red.opacity(0.26)
+            )
+        }
+    }
+
+    private func cycleForecastAverageSegments(_ forecast: QuotaCycleRunForecast) -> [ProjectionSegment] {
+        let points = forecast.corridorPoints.map {
+            GraphPoint(date: $0.date, percent: $0.averageUsedPercent, series: "cycle-average")
+        }
+        return thresholdSegments(
+            id: "cycle-average",
+            points: points,
+            belowColor: Color.blue.opacity(0.28),
+            aboveColor: Color.red.opacity(0.46)
+        )
+    }
+
+    private func thresholdSegments(
+        id: String,
+        points: [GraphPoint],
+        belowColor: Color,
+        aboveColor: Color
+    ) -> [ProjectionSegment] {
+        guard points.count >= 2 else {
+            return []
+        }
+
+        var segments: [ProjectionSegment] = []
+        for index in 1..<points.count {
+            let start = points[index - 1]
+            let end = points[index]
+            appendThresholdSegments(
+                id: "\(id)-\(index)",
+                start: start,
+                end: end,
+                belowColor: belowColor,
+                aboveColor: aboveColor,
+                into: &segments
+            )
+        }
+        return segments
+    }
+
+    private func appendThresholdSegments(
+        id: String,
+        start: GraphPoint,
+        end: GraphPoint,
+        belowColor: Color,
+        aboveColor: Color,
+        into segments: inout [ProjectionSegment]
+    ) {
+        let startIsAbove = start.percent > 100
+        let endIsAbove = end.percent > 100
+        guard startIsAbove != endIsAbove,
+              abs(end.percent - start.percent) > 0.0001 else {
+            appendLineSegment(
+                id: id,
+                color: startIsAbove && endIsAbove ? aboveColor : belowColor,
+                start: start,
+                end: end,
+                into: &segments
+            )
+            return
+        }
+
+        let fraction = (100 - start.percent) / (end.percent - start.percent)
+        let crossingDate = start.date.addingTimeInterval(end.date.timeIntervalSince(start.date) * fraction)
+        let crossingPoint = GraphPoint(date: crossingDate, percent: 100, series: id)
+
+        appendLineSegment(
+            id: "\(id)-below",
+            color: startIsAbove ? aboveColor : belowColor,
+            start: start,
+            end: crossingPoint,
+            into: &segments
+        )
+        appendLineSegment(
+            id: "\(id)-above",
+            color: endIsAbove ? aboveColor : belowColor,
+            start: crossingPoint,
+            end: end,
+            into: &segments
+        )
+    }
+
+    private func appendLineSegment(
+        id: String,
+        color: Color,
+        start: GraphPoint,
+        end: GraphPoint,
+        into segments: inout [ProjectionSegment]
+    ) {
+        segments.append(
+            ProjectionSegment(
+                id: id,
+                color: color,
+                points: [
+                    GraphPoint(date: start.date, percent: graphPercent(start.percent), series: id),
+                    GraphPoint(date: end.date, percent: graphPercent(end.percent), series: id)
+                ]
+            )
+        )
     }
 
     private func graphPercent(_ value: Double) -> Double {
