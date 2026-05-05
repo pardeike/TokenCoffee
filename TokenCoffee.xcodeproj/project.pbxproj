@@ -105,6 +105,7 @@
 		91866704F00A6C51FF289D6A /* TokenCoffeeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenCoffeeApp.swift; sourceTree = "<group>"; };
 		93463707FA87FD54AA98CFAC /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 		93BBAFF32DE0999AB7B00486 /* CodexRateLimitClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexRateLimitClient.swift; sourceTree = "<group>"; };
+		AB49006602A950ADB340B435 /* Token Coffee.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Token Coffee.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B0C5145E0C5927208B1F27B7 /* TokenCoffee.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TokenCoffee.entitlements; sourceTree = "<group>"; };
 		B9BD5D8879BE323DD853C8A3 /* QuotaSampleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaSampleStore.swift; sourceTree = "<group>"; };
 		B9C3187BF6FB3997BBC1E839 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
@@ -115,7 +116,6 @@
 		EA274434F4C69B881FDBF2F8 /* TokenCoffeeCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = TokenCoffeeCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		F7CF74AE3A35B9AD89C0E79E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		FC1C73A26484DD327BF9F874 /* QuotaSyncStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaSyncStatus.swift; sourceTree = "<group>"; };
-		FDA9AD0892BEF72EEA03A3F2 /* TokenCoffee.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TokenCoffee.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -198,7 +198,7 @@
 		594ACE384572801C998698F2 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				FDA9AD0892BEF72EEA03A3F2 /* TokenCoffee.app */,
+				AB49006602A950ADB340B435 /* Token Coffee.app */,
 				EA274434F4C69B881FDBF2F8 /* TokenCoffeeCore.framework */,
 				3D601C714412883975A7B560 /* TokenCoffeeCoreTests.xctest */,
 			);
@@ -264,7 +264,7 @@
 			packageProductDependencies = (
 			);
 			productName = TokenCoffee;
-			productReference = FDA9AD0892BEF72EEA03A3F2 /* TokenCoffee.app */;
+			productReference = AB49006602A950ADB340B435 /* Token Coffee.app */;
 			productType = "com.apple.product-type.application";
 		};
 		840754A614744B41BBA8E783 /* TokenCoffeeCore */ = {
@@ -443,7 +443,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
@@ -481,6 +480,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				"EXCLUDED_ARCHS[sdk=macosx*]" = x86_64;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -522,6 +522,7 @@
 				CODE_SIGN_ENTITLEMENTS = Sources/TokenCoffeeApp/TokenCoffee.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 0;
 				DEVELOPMENT_TEAM = W65292CD8T;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -541,6 +542,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pardeike.TokenCoffee;
 				PRODUCT_NAME = "Token Coffee";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -568,7 +570,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
@@ -606,6 +607,7 @@
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				"EXCLUDED_ARCHS[sdk=macosx*]" = x86_64;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_TREAT_WARNINGS_AS_ERRORS = YES;
@@ -657,6 +659,7 @@
 				CODE_SIGN_ENTITLEMENTS = Sources/TokenCoffeeApp/TokenCoffee.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 0;
 				DEVELOPMENT_TEAM = W65292CD8T;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -676,6 +679,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MARKETING_VERSION = 1.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pardeike.TokenCoffee;
 				PRODUCT_NAME = "Token Coffee";
 				PROVISIONING_PROFILE_SPECIFIER = "";
