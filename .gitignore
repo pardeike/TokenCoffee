@@ -1,0 +1,10 @@
+.DS_Store
+.build/
+dist/
+DerivedData/
+build/
+*.dSYM/
+*.xcarchive/
+*.xcresult
+*.xcuserstate
+xcuserdata/

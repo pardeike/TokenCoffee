@@ -1,0 +1,80 @@
+name: TokenHelper
+options:
+  minimumXcodeGenVersion: 2.42.0
+  deploymentTarget:
+    macOS: "26.0"
+settings:
+  base:
+    ARCHS: arm64
+    ONLY_ACTIVE_ARCH: YES
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+    GCC_TREAT_WARNINGS_AS_ERRORS: YES
+    RUN_CLANG_STATIC_ANALYZER: YES
+    CODE_SIGNING_ALLOWED: NO
+    OTHER_SWIFT_FLAGS:
+      - -strict-concurrency=complete
+      - -warnings-as-errors
+targets:
+  TokenHelperCore:
+    type: framework
+    platform: macOS
+    sources:
+      - Sources/TokenHelperCore
+    info:
+      path: Sources/TokenHelperCore/Info.plist
+      properties:
+        CFBundleIdentifier: com.pardeike.TokenHelperCore
+        CFBundleName: TokenHelperCore
+        CFBundleShortVersionString: "0.1"
+        CFBundleVersion: "1"
+    dependencies:
+      - sdk: IOKit.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pardeike.TokenHelperCore
+  TokenHelper:
+    type: application
+    platform: macOS
+    sources:
+      - Sources/TokenHelperApp
+    resources:
+      - Sources/TokenHelperApp/Resources
+    dependencies:
+      - target: TokenHelperCore
+      - sdk: SwiftUI.framework
+      - sdk: Charts.framework
+      - sdk: AppKit.framework
+    info:
+      path: Sources/TokenHelperApp/Info.plist
+      properties:
+        CFBundleIdentifier: com.pardeike.TokenHelper
+        CFBundleName: TokenHelper
+        CFBundleDisplayName: TokenHelper
+        CFBundleShortVersionString: "0.1"
+        CFBundleVersion: "1"
+        LSUIElement: true
+        LSMinimumSystemVersion: "26.0"
+        NSHumanReadableCopyright: "Copyright Andreas Pardeike"
+        NSSupportsAutomaticTermination: false
+        NSSupportsSuddenTermination: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.pardeike.TokenHelper
+  TokenHelperCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests/TokenHelperCoreTests
+    dependencies:
+      - target: TokenHelperCore
+schemes:
+  TokenHelper:
+    build:
+      targets:
+        TokenHelper: all
+        TokenHelperCoreTests: [test]
+    test:
+      targets:
+        - TokenHelperCoreTests
