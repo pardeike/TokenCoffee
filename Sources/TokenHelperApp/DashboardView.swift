@@ -457,7 +457,7 @@ private struct CycleForecastLineOverlay: View {
                     aboveColor: .red.opacity(0.46),
                     lineWidth: 4.5,
                     lineCap: .butt,
-                    lineJoin: .miter
+                    lineJoin: .bevel
                 )
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
@@ -485,9 +485,6 @@ private struct CycleForecastLineOverlay: View {
             if let lastEnd {
                 let connector = CGPoint(x: start.x, y: lastEnd.y)
                 path.addLine(to: connector)
-                if abs(connector.y - start.y) > 0.5 {
-                    path.addLine(to: start)
-                }
             } else {
                 path.move(to: start)
             }
