@@ -165,6 +165,27 @@ final class QuotaProjectionTests: XCTestCase {
         XCTAssertEqual(forecast?.projectedWeeklyUsedPercentAtReset ?? 0, 96, accuracy: 0.001)
         XCTAssertEqual(forecast?.averageRuns.count, 4)
         XCTAssertEqual(forecast?.ghostRuns.count, 8)
+        XCTAssertEqual(projection.paceState, .watch)
+    }
+
+    func testPaceStateUsesDisplayedCycleRunForecastWhenRecentSlopeOverreacts() {
+        let day: TimeInterval = 24 * 60 * 60
+        let hour: TimeInterval = 60 * 60
+        let start = Date(timeIntervalSince1970: 1_000)
+        let reset = start.addingTimeInterval(7 * day)
+        let now = start.addingTimeInterval(day + 4 * hour)
+        let snapshot = snapshot(usedPercent: 30, reset: reset)
+        let samples = [
+            sample(at: now.addingTimeInterval(-3.5 * hour), usedPercent: 28, reset: reset),
+            sample(at: now.addingTimeInterval(-2 * hour), usedPercent: 29, reset: reset),
+            sample(at: now, usedPercent: 30, reset: reset)
+        ]
+
+        let projection = QuotaProjectionEngine.make(snapshot: snapshot, samples: samples, now: now)
+
+        XCTAssertGreaterThan(projection.projectedWeeklyUsedPercentAtReset ?? 0, 100)
+        XCTAssertLessThan(projection.cycleRunForecast?.projectedWeeklyUsedPercentAtReset ?? 100, 90)
+        XCTAssertEqual(projection.paceState, .fine)
     }
 
     func testCycleRunForecastLineStartsWithCurrentProjectedActivityInsideRun() {

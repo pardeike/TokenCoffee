@@ -185,7 +185,8 @@ public enum QuotaProjectionEngine {
             now: now,
             samples: currentWindowSamples
         )
-        let state = paceState(current: current, projected: projected)
+        let paceProjected = cycleForecast?.projectedWeeklyUsedPercentAtReset ?? projected
+        let state = paceState(current: current, projected: paceProjected)
 
         return QuotaProjection(
             currentWeeklyUsedPercent: current,
