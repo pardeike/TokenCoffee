@@ -205,7 +205,7 @@ private struct QuotaGraphView: View {
                                 series: .value("Series", segment.id)
                             )
                             .foregroundStyle(segment.color)
-                            .lineStyle(StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
+                            .lineStyle(StrokeStyle(lineWidth: 2.4, lineCap: .butt, lineJoin: .round))
                         }
                     }
 
@@ -227,7 +227,7 @@ private struct QuotaGraphView: View {
                                 series: .value("Series", segment.id)
                             )
                             .foregroundStyle(segment.color)
-                            .lineStyle(StrokeStyle(lineWidth: 4.5, lineCap: .round, lineJoin: .round))
+                            .lineStyle(StrokeStyle(lineWidth: 4.5, lineCap: .butt, lineJoin: .round))
                         }
                     }
                 }
@@ -400,7 +400,7 @@ private struct QuotaGraphView: View {
     }
 
     private func cycleForecastGhostSegments(_ forecast: QuotaCycleRunForecast) -> [ProjectionSegment] {
-        forecast.ghostRuns.enumerated().flatMap { index, run -> [ProjectionSegment] in
+        uniqueForecastRuns(forecast.ghostRuns).enumerated().flatMap { index, run -> [ProjectionSegment] in
             guard run.endDate > run.startDate else {
                 return []
             }
@@ -415,6 +415,21 @@ private struct QuotaGraphView: View {
                 belowColor: Color.blue.opacity(0.11),
                 aboveColor: Color.red.opacity(0.26)
             )
+        }
+    }
+
+    private func uniqueForecastRuns(_ runs: [QuotaForecastRun]) -> [QuotaForecastRun] {
+        var seen: Set<String> = []
+        return runs.filter { run in
+            let key = [
+                quantized(run.startDate.timeIntervalSince1970, step: 60),
+                quantized(run.endDate.timeIntervalSince1970, step: 60),
+                quantized(run.startUsedPercent, step: 0.1),
+                quantized(run.endUsedPercent, step: 0.1)
+            ]
+            .map(String.init)
+            .joined(separator: ":")
+            return seen.insert(key).inserted
         }
     }
 
@@ -440,81 +455,47 @@ private struct QuotaGraphView: View {
             return []
         }
 
-        var segments: [ProjectionSegment] = []
+        var builder = ThresholdSegmentBuilder(
+            id: id,
+            belowColor: belowColor,
+            aboveColor: aboveColor,
+            ceiling: graphCeiling
+        )
         for index in 1..<points.count {
             let start = points[index - 1]
             let end = points[index]
             appendThresholdSegments(
-                id: "\(id)-\(index)",
                 start: start,
                 end: end,
-                belowColor: belowColor,
-                aboveColor: aboveColor,
-                into: &segments
+                into: &builder
             )
         }
-        return segments
+        return builder.finish()
     }
 
     private func appendThresholdSegments(
-        id: String,
         start: GraphPoint,
         end: GraphPoint,
-        belowColor: Color,
-        aboveColor: Color,
-        into segments: inout [ProjectionSegment]
+        into builder: inout ThresholdSegmentBuilder
     ) {
         let startIsAbove = start.percent > 100
         let endIsAbove = end.percent > 100
         guard startIsAbove != endIsAbove,
               abs(end.percent - start.percent) > 0.0001 else {
-            appendLineSegment(
-                id: id,
-                color: startIsAbove && endIsAbove ? aboveColor : belowColor,
-                start: start,
-                end: end,
-                into: &segments
-            )
+            builder.append(tone: startIsAbove && endIsAbove ? .above : .below, start: start, end: end)
             return
         }
 
         let fraction = (100 - start.percent) / (end.percent - start.percent)
         let crossingDate = start.date.addingTimeInterval(end.date.timeIntervalSince(start.date) * fraction)
-        let crossingPoint = GraphPoint(date: crossingDate, percent: 100, series: id)
+        let crossingPoint = GraphPoint(date: crossingDate, percent: 100, series: start.series)
 
-        appendLineSegment(
-            id: "\(id)-below",
-            color: startIsAbove ? aboveColor : belowColor,
-            start: start,
-            end: crossingPoint,
-            into: &segments
-        )
-        appendLineSegment(
-            id: "\(id)-above",
-            color: endIsAbove ? aboveColor : belowColor,
-            start: crossingPoint,
-            end: end,
-            into: &segments
-        )
+        builder.append(tone: startIsAbove ? .above : .below, start: start, end: crossingPoint)
+        builder.append(tone: endIsAbove ? .above : .below, start: crossingPoint, end: end)
     }
 
-    private func appendLineSegment(
-        id: String,
-        color: Color,
-        start: GraphPoint,
-        end: GraphPoint,
-        into segments: inout [ProjectionSegment]
-    ) {
-        segments.append(
-            ProjectionSegment(
-                id: id,
-                color: color,
-                points: [
-                    GraphPoint(date: start.date, percent: graphPercent(start.percent), series: id),
-                    GraphPoint(date: end.date, percent: graphPercent(end.percent), series: id)
-                ]
-            )
-        )
+    private func quantized(_ value: Double, step: Double) -> Int {
+        Int((value / step).rounded())
     }
 
     private func graphPercent(_ value: Double) -> Double {
@@ -553,6 +534,89 @@ private struct GraphPoint: Identifiable {
 
     var id: String {
         "\(series)-\(date.timeIntervalSince1970)"
+    }
+}
+
+private enum ThresholdTone {
+    case below
+    case above
+}
+
+private struct ThresholdSegmentBuilder {
+    let id: String
+    let belowColor: Color
+    let aboveColor: Color
+    let ceiling: Double
+
+    private var sequence = 0
+    private var currentTone: ThresholdTone?
+    private var currentPoints: [GraphPoint] = []
+    private var segments: [ProjectionSegment] = []
+
+    init(id: String, belowColor: Color, aboveColor: Color, ceiling: Double) {
+        self.id = id
+        self.belowColor = belowColor
+        self.aboveColor = aboveColor
+        self.ceiling = ceiling
+    }
+
+    mutating func append(tone: ThresholdTone, start: GraphPoint, end: GraphPoint) {
+        let startPoint = clippedPoint(start)
+        let endPoint = clippedPoint(end)
+        guard endPoint.date > startPoint.date else {
+            return
+        }
+
+        if currentTone == tone,
+           currentPoints.last.map({ samePoint($0, startPoint) }) == true {
+            currentPoints.append(endPoint)
+            return
+        }
+
+        flush()
+        currentTone = tone
+        currentPoints = [startPoint, endPoint]
+    }
+
+    mutating func finish() -> [ProjectionSegment] {
+        flush()
+        return segments
+    }
+
+    private mutating func flush() {
+        guard let currentTone,
+              currentPoints.count >= 2 else {
+            currentTone = nil
+            currentPoints = []
+            return
+        }
+
+        sequence += 1
+        let segmentID = "\(id)-\(sequence)"
+        segments.append(
+            ProjectionSegment(
+                id: segmentID,
+                color: currentTone == .above ? aboveColor : belowColor,
+                points: currentPoints.map {
+                    GraphPoint(date: $0.date, percent: $0.percent, series: segmentID)
+                }
+            )
+        )
+        self.currentTone = nil
+        currentPoints = []
+    }
+
+    private func clippedPoint(_ point: GraphPoint) -> GraphPoint {
+        GraphPoint(
+            date: point.date,
+            percent: min(ceiling, max(0, point.percent)),
+            series: point.series
+        )
+    }
+
+    private func samePoint(_ lhs: GraphPoint, _ rhs: GraphPoint) -> Bool {
+        abs(lhs.date.timeIntervalSince(rhs.date)) < 0.5
+            && abs(lhs.percent - rhs.percent) < 0.0001
     }
 }
 
