@@ -197,18 +197,6 @@ private struct QuotaGraphView: View {
                 }
 
                 if let cycleForecast = projection.cycleRunForecast {
-                    ForEach(cycleForecastGhostSegments(cycleForecast)) { segment in
-                        ForEach(segment.points) { point in
-                            LineMark(
-                                x: .value("Time", point.date),
-                                y: .value("Percent", point.percent),
-                                series: .value("Series", segment.id)
-                            )
-                            .foregroundStyle(segment.color)
-                            .lineStyle(StrokeStyle(lineWidth: 2.4, lineCap: .butt, lineJoin: .round))
-                        }
-                    }
-
                     ForEach(cycleForecast.corridorPoints, id: \.date) { point in
                         AreaMark(
                             x: .value("Time", point.date),
@@ -217,18 +205,6 @@ private struct QuotaGraphView: View {
                         )
                         .foregroundStyle(Color.blue.opacity(0.11))
                         .interpolationMethod(.linear)
-                    }
-
-                    ForEach(cycleForecastAverageSegments(cycleForecast)) { segment in
-                        ForEach(segment.points) { point in
-                            LineMark(
-                                x: .value("Time", point.date),
-                                y: .value("Percent", point.percent),
-                                series: .value("Series", segment.id)
-                            )
-                            .foregroundStyle(segment.color)
-                            .lineStyle(StrokeStyle(lineWidth: 4.5, lineCap: .butt, lineJoin: .round))
-                        }
                     }
                 }
 
@@ -289,6 +265,19 @@ private struct QuotaGraphView: View {
                                 .foregroundStyle(.secondary)
                                 .offset(y: number == 0 ? -4 : 0)
                         }
+                    }
+                }
+            }
+            .chartPlotStyle { plotArea in
+                plotArea.overlay {
+                    if let cycleForecast = projection.cycleRunForecast {
+                        CycleForecastLineOverlay(
+                            forecast: cycleForecast,
+                            startDate: startDate,
+                            resetDate: resetDate,
+                            ceiling: graphCeiling
+                        )
+                        .allowsHitTesting(false)
                     }
                 }
             }
@@ -399,105 +388,6 @@ private struct QuotaGraphView: View {
         return GraphPoint(date: ceilingDate, percent: graphCeiling, series: "projected-ceiling")
     }
 
-    private func cycleForecastGhostSegments(_ forecast: QuotaCycleRunForecast) -> [ProjectionSegment] {
-        uniqueForecastRuns(forecast.ghostRuns).enumerated().flatMap { index, run -> [ProjectionSegment] in
-            guard run.endDate > run.startDate else {
-                return []
-            }
-
-            let id = "cycle-run-\(index)"
-            return thresholdSegments(
-                id: id,
-                points: [
-                    GraphPoint(date: run.startDate, percent: run.startUsedPercent, series: id),
-                    GraphPoint(date: run.endDate, percent: run.endUsedPercent, series: id)
-                ],
-                belowColor: Color.blue.opacity(0.11),
-                aboveColor: Color.red.opacity(0.26)
-            )
-        }
-    }
-
-    private func uniqueForecastRuns(_ runs: [QuotaForecastRun]) -> [QuotaForecastRun] {
-        var seen: Set<String> = []
-        return runs.filter { run in
-            let key = [
-                quantized(run.startDate.timeIntervalSince1970, step: 60),
-                quantized(run.endDate.timeIntervalSince1970, step: 60),
-                quantized(run.startUsedPercent, step: 0.1),
-                quantized(run.endUsedPercent, step: 0.1)
-            ]
-            .map(String.init)
-            .joined(separator: ":")
-            return seen.insert(key).inserted
-        }
-    }
-
-    private func cycleForecastAverageSegments(_ forecast: QuotaCycleRunForecast) -> [ProjectionSegment] {
-        let points = forecast.corridorPoints.map {
-            GraphPoint(date: $0.date, percent: $0.averageUsedPercent, series: "cycle-average")
-        }
-        return thresholdSegments(
-            id: "cycle-average",
-            points: points,
-            belowColor: Color.blue.opacity(0.28),
-            aboveColor: Color.red.opacity(0.46)
-        )
-    }
-
-    private func thresholdSegments(
-        id: String,
-        points: [GraphPoint],
-        belowColor: Color,
-        aboveColor: Color
-    ) -> [ProjectionSegment] {
-        guard points.count >= 2 else {
-            return []
-        }
-
-        var builder = ThresholdSegmentBuilder(
-            id: id,
-            belowColor: belowColor,
-            aboveColor: aboveColor,
-            ceiling: graphCeiling
-        )
-        for index in 1..<points.count {
-            let start = points[index - 1]
-            let end = points[index]
-            appendThresholdSegments(
-                start: start,
-                end: end,
-                into: &builder
-            )
-        }
-        return builder.finish()
-    }
-
-    private func appendThresholdSegments(
-        start: GraphPoint,
-        end: GraphPoint,
-        into builder: inout ThresholdSegmentBuilder
-    ) {
-        let startIsAbove = start.percent > 100
-        let endIsAbove = end.percent > 100
-        guard startIsAbove != endIsAbove,
-              abs(end.percent - start.percent) > 0.0001 else {
-            builder.append(tone: startIsAbove && endIsAbove ? .above : .below, start: start, end: end)
-            return
-        }
-
-        let fraction = (100 - start.percent) / (end.percent - start.percent)
-        let crossingDate = start.date.addingTimeInterval(end.date.timeIntervalSince(start.date) * fraction)
-        let crossingPoint = GraphPoint(date: crossingDate, percent: 100, series: start.series)
-
-        builder.append(tone: startIsAbove ? .above : .below, start: start, end: crossingPoint)
-        builder.append(tone: endIsAbove ? .above : .below, start: crossingPoint, end: end)
-    }
-
-    private func quantized(_ value: Double, step: Double) -> Int {
-        Int((value / step).rounded())
-    }
-
     private func graphPercent(_ value: Double) -> Double {
         min(graphCeiling, max(0, value))
     }
@@ -537,86 +427,129 @@ private struct GraphPoint: Identifiable {
     }
 }
 
-private enum ThresholdTone {
-    case below
-    case above
-}
-
-private struct ThresholdSegmentBuilder {
-    let id: String
-    let belowColor: Color
-    let aboveColor: Color
+private struct CycleForecastLineOverlay: View {
+    let forecast: QuotaCycleRunForecast
+    let startDate: Date
+    let resetDate: Date
     let ceiling: Double
 
-    private var sequence = 0
-    private var currentTone: ThresholdTone?
-    private var currentPoints: [GraphPoint] = []
-    private var segments: [ProjectionSegment] = []
+    private let threshold = 100.0
 
-    init(id: String, belowColor: Color, aboveColor: Color, ceiling: Double) {
-        self.id = id
-        self.belowColor = belowColor
-        self.aboveColor = aboveColor
-        self.ceiling = ceiling
-    }
-
-    mutating func append(tone: ThresholdTone, start: GraphPoint, end: GraphPoint) {
-        let startPoint = clippedPoint(start)
-        let endPoint = clippedPoint(end)
-        guard endPoint.date > startPoint.date else {
-            return
-        }
-
-        if currentTone == tone,
-           currentPoints.last.map({ samePoint($0, startPoint) }) == true {
-            currentPoints.append(endPoint)
-            return
-        }
-
-        flush()
-        currentTone = tone
-        currentPoints = [startPoint, endPoint]
-    }
-
-    mutating func finish() -> [ProjectionSegment] {
-        flush()
-        return segments
-    }
-
-    private mutating func flush() {
-        guard let currentTone,
-              currentPoints.count >= 2 else {
-            currentTone = nil
-            currentPoints = []
-            return
-        }
-
-        sequence += 1
-        let segmentID = "\(id)-\(sequence)"
-        segments.append(
-            ProjectionSegment(
-                id: segmentID,
-                color: currentTone == .above ? aboveColor : belowColor,
-                points: currentPoints.map {
-                    GraphPoint(date: $0.date, percent: $0.percent, series: segmentID)
+    var body: some View {
+        GeometryReader { proxy in
+            Canvas { context, size in
+                guard size.width > 0,
+                      size.height > 0,
+                      resetDate > startDate else {
+                    return
                 }
-            )
-        )
-        self.currentTone = nil
-        currentPoints = []
+
+                let ghostPath = ghostRunPath(in: size)
+                drawThresholded(
+                    path: ghostPath,
+                    in: size,
+                    context: &context,
+                    belowColor: .blue.opacity(0.11),
+                    aboveColor: .red.opacity(0.26),
+                    lineWidth: 2.4
+                )
+
+                let averagePath = averagePath(in: size)
+                drawThresholded(
+                    path: averagePath,
+                    in: size,
+                    context: &context,
+                    belowColor: .blue.opacity(0.28),
+                    aboveColor: .red.opacity(0.46),
+                    lineWidth: 4.5
+                )
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
     }
 
-    private func clippedPoint(_ point: GraphPoint) -> GraphPoint {
-        GraphPoint(
-            date: point.date,
-            percent: min(ceiling, max(0, point.percent)),
-            series: point.series
+    private func ghostRunPath(in size: CGSize) -> Path {
+        var path = Path()
+        for run in uniqueForecastRuns(forecast.ghostRuns) where run.endDate > run.startDate {
+            path.move(to: plotPoint(date: run.startDate, percent: run.startUsedPercent, in: size))
+            path.addLine(to: plotPoint(date: run.endDate, percent: run.endUsedPercent, in: size))
+        }
+        return path
+    }
+
+    private func averagePath(in size: CGSize) -> Path {
+        let points = forecast.corridorPoints
+            .sorted { $0.date < $1.date }
+            .map { plotPoint(date: $0.date, percent: $0.averageUsedPercent, in: size) }
+        var path = Path()
+        guard let first = points.first else {
+            return path
+        }
+        path.move(to: first)
+        for point in points.dropFirst() {
+            path.addLine(to: point)
+        }
+        return path
+    }
+
+    private func drawThresholded(
+        path: Path,
+        in size: CGSize,
+        context: inout GraphicsContext,
+        belowColor: Color,
+        aboveColor: Color,
+        lineWidth: Double
+    ) {
+        let thresholdY = y(percent: threshold, in: size)
+        let style = StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round)
+        let aboveRect = CGRect(x: 0, y: 0, width: size.width, height: thresholdY)
+        let belowRect = CGRect(x: 0, y: thresholdY, width: size.width, height: size.height - thresholdY)
+
+        context.drawLayer { layer in
+            layer.clip(to: Path(belowRect))
+            layer.stroke(path, with: .color(belowColor), style: style)
+        }
+        context.drawLayer { layer in
+            layer.clip(to: Path(aboveRect))
+            layer.stroke(path, with: .color(aboveColor), style: style)
+        }
+    }
+
+    private func plotPoint(date: Date, percent: Double, in size: CGSize) -> CGPoint {
+        CGPoint(
+            x: x(date: date, in: size),
+            y: y(percent: percent, in: size)
         )
     }
 
-    private func samePoint(_ lhs: GraphPoint, _ rhs: GraphPoint) -> Bool {
-        abs(lhs.date.timeIntervalSince(rhs.date)) < 0.5
-            && abs(lhs.percent - rhs.percent) < 0.0001
+    private func x(date: Date, in size: CGSize) -> Double {
+        let duration = resetDate.timeIntervalSince(startDate)
+        let fraction = date.timeIntervalSince(startDate) / duration
+        return min(1, max(0, fraction)) * size.width
+    }
+
+    private func y(percent: Double, in size: CGSize) -> Double {
+        let value = min(ceiling, max(0, percent))
+        return size.height * (1 - value / ceiling)
+    }
+
+    private func uniqueForecastRuns(_ runs: [QuotaForecastRun]) -> [QuotaForecastRun] {
+        var seen: Set<String> = []
+        return runs.filter { run in
+            let key = [
+                quantized(run.startDate.timeIntervalSince1970, step: 60),
+                quantized(run.endDate.timeIntervalSince1970, step: 60),
+                quantized(run.startUsedPercent, step: 0.1),
+                quantized(run.endUsedPercent, step: 0.1)
+            ]
+            .map(String.init)
+            .joined(separator: ":")
+            return seen.insert(key).inserted
+        }
+    }
+
+    private func quantized(_ value: Double, step: Double) -> Int {
+        Int((value / step).rounded())
     }
 }
 
