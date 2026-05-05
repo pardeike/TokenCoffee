@@ -3,6 +3,7 @@
 dist/
 DerivedData/
 build/
+*~lock~
 *.dSYM/
 *.xcarchive/
 *.xcresult

@@ -40,6 +40,7 @@ targets:
     sources:
       - Sources/TokenHelperApp
     resources:
+      - Sources/TokenHelperApp/Assets.xcassets
       - Sources/TokenHelperApp/Resources
     dependencies:
       - target: TokenHelperCore
@@ -52,6 +53,7 @@ targets:
         CFBundleIdentifier: com.pardeike.TokenHelper
         CFBundleName: TokenHelper
         CFBundleDisplayName: TokenHelper
+        CFBundleIconName: AppIcon
         CFBundleShortVersionString: "0.1"
         CFBundleVersion: "1"
         LSUIElement: true
@@ -61,6 +63,7 @@ targets:
         NSSupportsSuddenTermination: false
     settings:
       base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         PRODUCT_BUNDLE_IDENTIFIER: com.pardeike.TokenHelper
   TokenHelperCoreTests:
     type: bundle.unit-test
