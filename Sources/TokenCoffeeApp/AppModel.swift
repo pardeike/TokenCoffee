@@ -36,6 +36,7 @@ final class AppModel: ObservableObject {
     private var quotaClientEventTask: Task<Void, Never>?
     private var activeCodexLogin: CodexDeviceCodeLogin?
     private var hasStartedLiveRuntime = false
+    private var hasInstalledFailSafe = false
     private var liveStateBeforeDemoMode: AppModelLiveState?
 
     init(
@@ -122,9 +123,6 @@ final class AppModel: ObservableObject {
         }
 
         hasStartedLiveRuntime = true
-        if let executableURL = Bundle.main.executableURL {
-            try? failSafeInstaller.install(bundleExecutableURL: executableURL)
-        }
         if powerMode != .off {
             applyPowerConfiguration()
         }
@@ -400,10 +398,27 @@ final class AppModel: ObservableObject {
 
     private func applyPowerConfiguration() {
         do {
+            if powerMode != .off {
+                installFailSafeIfPossible()
+            }
             try powerController.apply(mode: powerMode)
             powerErrorMessage = nil
         } catch {
             powerErrorMessage = error.localizedDescription
+        }
+    }
+
+    private func installFailSafeIfPossible() {
+        guard !hasInstalledFailSafe,
+              let executableURL = Bundle.main.executableURL else {
+            return
+        }
+
+        do {
+            try failSafeInstaller.install(bundleExecutableURL: executableURL)
+            hasInstalledFailSafe = true
+        } catch {
+            NSLog("Token Coffee could not install clamshell fail-safe: \(error.localizedDescription)")
         }
     }
 
