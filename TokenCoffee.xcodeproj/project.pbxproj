@@ -41,6 +41,7 @@
 		D95162623E0901260BA235F6 /* CodexNativeUsageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9379B3F3A2D1BCF2F4898B7 /* CodexNativeUsageService.swift */; };
 		DC9F2F59FB48E23513A03E3C /* CodexNativeSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5645DB2AF14015C9B891D4FD /* CodexNativeSupport.swift */; };
 		E80AC25F5C32E65DEAE0E6F5 /* QuotaSampleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9BD5D8879BE323DD853C8A3 /* QuotaSampleStore.swift */; };
+		E8B65880477127AA57C600D0 /* PanelControlMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F723B70B68EC1ABF330D3EB /* PanelControlMenu.swift */; };
 		EC01D5842E2837D1C4352CB7 /* CodexNativeAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB555D4794B9843BAFE1F925 /* CodexNativeAuthService.swift */; };
 		EDF6297C87A0CD2D53938697 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03220F6952C7B17BBAB884B2 /* AppDelegate.swift */; };
 		F45A06377445A0303F777BEA /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 78DC4B26FEA8A020F3BB30F9 /* Security.framework */; };
@@ -93,6 +94,7 @@
 /* Begin PBXFileReference section */
 		03220F6952C7B17BBAB884B2 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		05C4EE8DAEAA52B72DE45C53 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
+		0F723B70B68EC1ABF330D3EB /* PanelControlMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelControlMenu.swift; sourceTree = "<group>"; };
 		0FAC0F5A9603A4F9B39D3800 /* DemoQuotaData.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = DemoQuotaData.json; sourceTree = "<group>"; };
 		1197BE68CBCE1F6FF43ECD29 /* StatusIconOff.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = StatusIconOff.png; sourceTree = "<group>"; };
 		1B3455110B07773BD008152F /* CloudQuotaSampleSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudQuotaSampleSyncService.swift; sourceTree = "<group>"; };
@@ -176,6 +178,7 @@
 				1B3455110B07773BD008152F /* CloudQuotaSampleSyncService.swift */,
 				B9C3187BF6FB3997BBC1E839 /* DashboardView.swift */,
 				E27E4F4CA638E9727B0FD9D7 /* Info.plist */,
+				0F723B70B68EC1ABF330D3EB /* PanelControlMenu.swift */,
 				FC1C73A26484DD327BF9F874 /* QuotaSyncStatus.swift */,
 				DAE6FFD288FA2AD75A829908 /* StatusPanelController.swift */,
 				B0C5145E0C5927208B1F27B7 /* TokenCoffee.entitlements */,
@@ -385,6 +388,7 @@
 				8E44467D7F4FC5A0FB92A3BF /* AppModel.swift in Sources */,
 				40E2BA4DD4D75AFB6944C3BD /* CloudQuotaSampleSyncService.swift in Sources */,
 				12E041F3B81610E4C9B4E708 /* DashboardView.swift in Sources */,
+				E8B65880477127AA57C600D0 /* PanelControlMenu.swift in Sources */,
 				C1BEB0ED90F1D712DE1A9839 /* QuotaSyncStatus.swift in Sources */,
 				B7FCF9112D2FF1984F036205 /* StatusPanelController.swift in Sources */,
 				9BAAD393FA0C312BFAEEB322 /* TokenCoffeeApp.swift in Sources */,

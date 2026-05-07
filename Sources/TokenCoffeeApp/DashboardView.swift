@@ -5,9 +5,11 @@ import TokenCoffeeCore
 
 struct DashboardView: View {
     @ObservedObject var model: AppModel
+    let closeWindow: () -> Void
+    let showAbout: () -> Void
+
     @Environment(\.openURL) private var openURL
     @State private var selectedPowerMode: PowerSessionMode = .off
-    @State private var isCloseButtonHovered = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -59,26 +61,13 @@ struct DashboardView: View {
 
             Spacer(minLength: 0)
 
-            Button {
-                if NSEvent.modifierFlags.contains(.option) {
-                    model.logoutCodex()
-                } else {
-                    NSApp.terminate(nil)
-                }
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(Color.primary.opacity(isCloseButtonHovered ? 0.12 : 0.08))
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Color.primary.opacity(isCloseButtonHovered ? 0.48 : 0.34))
-                }
-                .frame(width: 22, height: 22)
-                .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .onHover { isCloseButtonHovered = $0 }
-            .help("Quit")
+            PanelMenuButton(
+                model: model,
+                closeWindow: closeWindow,
+                showAbout: showAbout
+            )
+            .frame(width: 22, height: 22)
+            .help("Menu")
         }
         .frame(maxWidth: .infinity)
     }

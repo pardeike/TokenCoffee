@@ -13,14 +13,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("tokencoffee-quota-samples.jsonl")
         )
         let powerController = PowerSessionController()
-        let demoScenario = Self.demoScenarioIfRequested()
+        let startsInDemoMode = CommandLine.arguments.contains("--demo")
+        let demoScenario = Self.bundledDemoScenario(logErrors: startsInDemoMode)
         let model = AppModel(
             powerController: powerController,
             quotaClient: CodexRateLimitClient(),
             sampleStore: sampleStore,
             sampleSyncService: CloudQuotaSampleSyncService(),
             failSafeInstaller: ClamshellFailSafeInstaller(),
-            demoScenario: demoScenario
+            demoScenario: demoScenario,
+            startsInDemoMode: startsInDemoMode
         )
         self.model = model
         self.statusPanelController = StatusPanelController(model: model)
@@ -33,13 +35,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model?.shutdown()
     }
 
-    private static func demoScenarioIfRequested() -> DemoQuotaScenario? {
-        guard CommandLine.arguments.contains("--demo") else {
-            return nil
-        }
-
+    private static func bundledDemoScenario(logErrors: Bool) -> DemoQuotaScenario? {
         guard let url = Bundle.main.url(forResource: "DemoQuotaData", withExtension: "json") else {
-            NSLog("Token Coffee demo mode requested, but DemoQuotaData.json is missing.")
+            if logErrors {
+                NSLog("Token Coffee demo mode requested, but DemoQuotaData.json is missing.")
+            }
             return nil
         }
 
@@ -48,7 +48,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let demoData = try JSONDecoder().decode(DemoQuotaData.self, from: data)
             return try demoData.makeScenario()
         } catch {
-            NSLog("Token Coffee demo mode requested, but demo data could not be loaded: \(error.localizedDescription)")
+            if logErrors {
+                NSLog("Token Coffee demo mode requested, but demo data could not be loaded: \(error.localizedDescription)")
+            }
             return nil
         }
     }

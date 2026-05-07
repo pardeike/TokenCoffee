@@ -79,7 +79,6 @@ targets:
         LSUIElement: true
         LSMinimumSystemVersion: "15.0"
         ITSAppUsesNonExemptEncryption: false
-        NSHumanReadableCopyright: "Copyright Andreas Pardeike"
         NSSupportsAutomaticTermination: false
         NSSupportsSuddenTermination: false
     settings:

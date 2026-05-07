@@ -48,13 +48,20 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         panel.hidesOnDeactivate = false
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.contentView = NSHostingView(rootView: DashboardView(model: model))
+        panel.contentView = NSHostingView(rootView: DashboardView(
+            model: model,
+            closeWindow: { [weak self] in
+                self?.closePanel()
+            },
+            showAbout: {
+                Self.showAboutPanel()
+            }
+        ))
     }
 
     @objc private func togglePanel() {
         if panel.isVisible {
-            panel.orderOut(nil)
-            model.setPanelVisible(false)
+            closePanel()
         } else {
             positionPanel()
             NSApp.activate()
@@ -65,6 +72,87 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         model.setPanelVisible(false)
+    }
+
+    private func closePanel() {
+        panel.orderOut(nil)
+        model.setPanelVisible(false)
+    }
+
+    private static func showAboutPanel() {
+        let options: [NSApplication.AboutPanelOptionKey: Any] = [
+            .credits: aboutCredits()
+        ]
+
+        NSApp.activate()
+        NSApp.orderFrontStandardAboutPanel(options: options)
+    }
+
+    private static func aboutCredits() -> NSAttributedString {
+        let text = NSMutableAttributedString()
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .center
+
+        let baseAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+            .foregroundColor: NSColor.secondaryLabelColor,
+            .paragraphStyle: paragraphStyle
+        ]
+
+        append(
+            "Token Coffee is an independent utility for viewing Codex quota status.\n",
+            to: text,
+            attributes: baseAttributes
+        )
+        append(
+            "Copyright Andreas Pardeike\n",
+            to: text,
+            attributes: baseAttributes
+        )
+        append(
+            "Codex is not a product of Andreas Pardeike.\n\n",
+            to: text,
+            attributes: baseAttributes
+        )
+        append("Support: ", to: text, attributes: baseAttributes)
+        append(
+            "https://github.com/pardeike/TokenCoffee/blob/main/SUPPORT.md\n\n",
+            to: text,
+            attributes: linkAttributes(
+                url: URL(string: "https://github.com/pardeike/TokenCoffee/blob/main/SUPPORT.md")!,
+                baseAttributes: baseAttributes
+            )
+        )
+        append("Privacy Policy: ", to: text, attributes: baseAttributes)
+        append(
+            "https://github.com/pardeike/TokenCoffee/blob/main/PRIVACY.md",
+            to: text,
+            attributes: linkAttributes(
+                url: URL(string: "https://github.com/pardeike/TokenCoffee/blob/main/PRIVACY.md")!,
+                baseAttributes: baseAttributes
+            )
+        )
+
+        return text
+    }
+
+    private static func append(
+        _ string: String,
+        to text: NSMutableAttributedString,
+        attributes: [NSAttributedString.Key: Any]
+    ) {
+        text.append(NSAttributedString(string: string, attributes: attributes))
+    }
+
+    private static func linkAttributes(
+        url: URL,
+        baseAttributes: [NSAttributedString.Key: Any]
+    ) -> [NSAttributedString.Key: Any] {
+        var attributes = baseAttributes
+        attributes[.link] = url
+        attributes[.foregroundColor] = NSColor.linkColor
+        attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
+        return attributes
     }
 
     private func positionPanel() {

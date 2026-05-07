@@ -23,16 +23,20 @@ final class AppModel: ObservableObject {
     @Published private(set) var isRefreshingQuota = false
     @Published private(set) var quotaSyncStatus: QuotaSyncStatus = .localOnly
     @Published private(set) var codexSignInState: CodexSignInState = .unknown
+    @Published private(set) var isDemoModeEnabled = false
 
     private let powerController: PowerSessionController
     private let quotaClient: CodexRateLimitClient
     private let sampleStore: QuotaSampleStore
     private let sampleSyncService: CloudQuotaSampleSyncService
     private let failSafeInstaller: ClamshellFailSafeInstaller
-    private let demoScenario: DemoQuotaScenario?
+    private let bundledDemoScenario: DemoQuotaScenario?
+    private let startsInDemoMode: Bool
     private var refreshTimer: Timer?
     private var quotaClientEventTask: Task<Void, Never>?
     private var activeCodexLogin: CodexDeviceCodeLogin?
+    private var hasStartedLiveRuntime = false
+    private var liveStateBeforeDemoMode: AppModelLiveState?
 
     init(
         powerController: PowerSessionController,
@@ -40,15 +44,18 @@ final class AppModel: ObservableObject {
         sampleStore: QuotaSampleStore,
         sampleSyncService: CloudQuotaSampleSyncService,
         failSafeInstaller: ClamshellFailSafeInstaller,
-        demoScenario: DemoQuotaScenario? = nil
+        demoScenario: DemoQuotaScenario? = nil,
+        startsInDemoMode: Bool = false
     ) {
         self.powerController = powerController
         self.quotaClient = quotaClient
         self.sampleStore = sampleStore
         self.sampleSyncService = sampleSyncService
         self.failSafeInstaller = failSafeInstaller
-        self.demoScenario = demoScenario
-        self.powerMode = demoScenario == nil ? TokenCoffeeDefaults.preferredPowerMode() : .keepAwakeDisplay
+        self.bundledDemoScenario = demoScenario
+        self.startsInDemoMode = startsInDemoMode && demoScenario != nil
+        self.isDemoModeEnabled = self.startsInDemoMode
+        self.powerMode = self.startsInDemoMode ? .keepAwakeDisplay : TokenCoffeeDefaults.preferredPowerMode()
     }
 
     var projection: QuotaProjection {
@@ -56,7 +63,30 @@ final class AppModel: ObservableObject {
     }
 
     var referenceDate: Date {
-        demoScenario?.now ?? Date()
+        if isDemoModeEnabled,
+           let bundledDemoScenario {
+            return bundledDemoScenario.now
+        }
+        return Date()
+    }
+
+    var isCodexLoggedIn: Bool {
+        if case .signedIn = codexSignInState {
+            return true
+        }
+        return false
+    }
+
+    var canToggleDemoMode: Bool {
+        bundledDemoScenario != nil
+    }
+
+    var authenticationMenuTitle: String {
+        isCodexLoggedIn ? "Log out" : "Log in"
+    }
+
+    var canPerformAuthenticationMenuAction: Bool {
+        !codexSignInState.isLoginFlowActive
     }
 
     var graphSamples: [QuotaSample] {
@@ -77,11 +107,21 @@ final class AppModel: ObservableObject {
 
     func start() {
         TokenCoffeeDefaults.setClosedDisplayModeEnabled(false)
-        if let demoScenario {
-            startDemoMode(demoScenario)
+        if isDemoModeEnabled,
+           let bundledDemoScenario {
+            applyDemoScenario(bundledDemoScenario)
             return
         }
 
+        startLiveRuntime()
+    }
+
+    private func startLiveRuntime() {
+        guard !hasStartedLiveRuntime else {
+            return
+        }
+
+        hasStartedLiveRuntime = true
         if let executableURL = Bundle.main.executableURL {
             try? failSafeInstaller.install(bundleExecutableURL: executableURL)
         }
@@ -106,13 +146,13 @@ final class AppModel: ObservableObject {
     }
 
     func setPanelVisible(_ visible: Bool) {
-        if visible, demoScenario == nil {
+        if visible, !isDemoModeEnabled {
             refreshQuota()
         }
     }
 
     func setPowerMode(_ mode: PowerSessionMode) {
-        if demoScenario != nil {
+        if startsInDemoMode && isDemoModeEnabled {
             powerMode = .keepAwakeDisplay
             return
         }
@@ -126,7 +166,7 @@ final class AppModel: ObservableObject {
     }
 
     func refreshQuota() {
-        guard demoScenario == nil else {
+        guard !isDemoModeEnabled else {
             return
         }
         guard !isRefreshingQuota else {
@@ -144,6 +184,9 @@ final class AppModel: ObservableObject {
             }.value
 
             guard let self else {
+                return
+            }
+            guard !self.isDemoModeEnabled else {
                 return
             }
 
@@ -175,7 +218,7 @@ final class AppModel: ObservableObject {
     }
 
     func beginCodexSignIn() {
-        guard demoScenario == nil else {
+        guard !isDemoModeEnabled else {
             return
         }
         guard !codexSignInState.isLoginFlowActive else {
@@ -203,12 +246,18 @@ final class AppModel: ObservableObject {
                 guard let self else {
                     return
                 }
+                guard !self.isDemoModeEnabled else {
+                    return
+                }
                 self.activeCodexLogin = login
                 self.codexSignInState = .signingIn(login)
                 self.lastQuotaErrorDate = nil
                 self.lastQuotaErrorMessage = nil
             } catch {
                 guard let self else {
+                    return
+                }
+                guard !self.isDemoModeEnabled else {
                     return
                 }
                 let message = Self.loginErrorMessage(for: error)
@@ -243,7 +292,12 @@ final class AppModel: ObservableObject {
     }
 
     func logoutCodex() {
-        guard demoScenario == nil else {
+        if isDemoModeEnabled {
+            disableDemoMode()
+            return
+        }
+
+        guard isCodexLoggedIn else {
             return
         }
 
@@ -267,6 +321,26 @@ final class AppModel: ObservableObject {
                 self.lastQuotaErrorMessage = error.localizedDescription
                 self.codexSignInState = .failed(error.localizedDescription)
             }
+        }
+    }
+
+    func toggleDemoMode() {
+        guard let bundledDemoScenario else {
+            return
+        }
+
+        if isDemoModeEnabled {
+            disableDemoMode()
+        } else {
+            enableDemoMode(bundledDemoScenario)
+        }
+    }
+
+    func performAuthenticationMenuAction() {
+        if isCodexLoggedIn {
+            logoutCodex()
+        } else {
+            beginCodexSignIn()
         }
     }
 
@@ -358,6 +432,10 @@ final class AppModel: ObservableObject {
     }
 
     private func handleQuotaClientEvent(_ event: CodexRateLimitEvent) {
+        guard !isDemoModeEnabled else {
+            return
+        }
+
         switch event {
         case let .accountChanged(account):
             if let account {
@@ -407,9 +485,64 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func startDemoMode(_ scenario: DemoQuotaScenario) {
-        powerMode = .keepAwakeDisplay
-        powerErrorMessage = nil
+    private func enableDemoMode(_ scenario: DemoQuotaScenario) {
+        liveStateBeforeDemoMode = AppModelLiveState(
+            powerErrorMessage: powerErrorMessage,
+            quotaSnapshot: quotaSnapshot,
+            quotaSamples: quotaSamples,
+            lastQuotaRefresh: lastQuotaRefresh,
+            lastQuotaErrorDate: lastQuotaErrorDate,
+            lastQuotaErrorMessage: lastQuotaErrorMessage,
+            quotaSyncStatus: quotaSyncStatus,
+            codexSignInState: codexSignInState,
+            activeCodexLogin: activeCodexLogin
+        )
+        isDemoModeEnabled = true
+        applyDemoScenario(scenario, clearsPowerError: false)
+    }
+
+    private func disableDemoMode() {
+        guard isDemoModeEnabled else {
+            return
+        }
+
+        isDemoModeEnabled = false
+
+        if let liveStateBeforeDemoMode {
+            quotaSnapshot = liveStateBeforeDemoMode.quotaSnapshot
+            powerErrorMessage = liveStateBeforeDemoMode.powerErrorMessage
+            quotaSamples = liveStateBeforeDemoMode.quotaSamples
+            lastQuotaRefresh = liveStateBeforeDemoMode.lastQuotaRefresh
+            lastQuotaErrorDate = liveStateBeforeDemoMode.lastQuotaErrorDate
+            lastQuotaErrorMessage = liveStateBeforeDemoMode.lastQuotaErrorMessage
+            quotaSyncStatus = liveStateBeforeDemoMode.quotaSyncStatus
+            codexSignInState = liveStateBeforeDemoMode.codexSignInState
+            activeCodexLogin = liveStateBeforeDemoMode.activeCodexLogin
+            isRefreshingQuota = false
+            self.liveStateBeforeDemoMode = nil
+        } else {
+            quotaSnapshot = nil
+            quotaSamples = (try? sampleStore.load()) ?? []
+            lastQuotaRefresh = nil
+            lastQuotaErrorDate = nil
+            lastQuotaErrorMessage = nil
+            isRefreshingQuota = false
+            quotaSyncStatus = .localOnly
+            activeCodexLogin = nil
+            codexSignInState = .unknown
+        }
+
+        if hasStartedLiveRuntime {
+            refreshQuota()
+        } else {
+            startLiveRuntime()
+        }
+    }
+
+    private func applyDemoScenario(_ scenario: DemoQuotaScenario, clearsPowerError: Bool = true) {
+        if clearsPowerError {
+            powerErrorMessage = nil
+        }
         quotaSnapshot = scenario.snapshot
         quotaSamples = scenario.samples
         lastQuotaRefresh = scenario.now
@@ -420,6 +553,18 @@ final class AppModel: ObservableObject {
         activeCodexLogin = nil
         codexSignInState = .signedIn(scenario.account)
     }
+}
+
+private struct AppModelLiveState {
+    let powerErrorMessage: String?
+    let quotaSnapshot: RateLimitSnapshot?
+    let quotaSamples: [QuotaSample]
+    let lastQuotaRefresh: Date?
+    let lastQuotaErrorDate: Date?
+    let lastQuotaErrorMessage: String?
+    let quotaSyncStatus: QuotaSyncStatus
+    let codexSignInState: CodexSignInState
+    let activeCodexLogin: CodexDeviceCodeLogin?
 }
 
 private struct QuotaFetchResult: Sendable {
