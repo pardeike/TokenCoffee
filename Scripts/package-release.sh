@@ -24,7 +24,10 @@ xcodegen generate
 xcodebuild $PROVISIONING_ARGS -scheme TokenCoffee -configuration Release -derivedDataPath "$DERIVED_DATA" clean build $SIGNING_ARGS
 
 if [ "$AD_HOC_SIGN" -eq 1 ]; then
-  find "$APP/Contents/Frameworks" -type d -name "*.framework" -prune -exec codesign --force --sign - --options runtime {} \;
+  # Hardened runtime library validation rejects ad-hoc embedded frameworks because
+  # neither side has a stable Team ID. Real team-signed builds keep Xcode's
+  # hardened runtime path; the ad-hoc fallback signs without runtime options.
+  find "$APP/Contents/Frameworks" -type d -name "*.framework" -prune -exec codesign --force --sign - {} \;
   if [ -f "$APP_ENTITLEMENTS" ]; then
     APP_SIGN_ENTITLEMENTS="$APP_ENTITLEMENTS"
   else
@@ -43,7 +46,7 @@ if [ "$AD_HOC_SIGN" -eq 1 ]; then
 PLIST
     APP_SIGN_ENTITLEMENTS="$APP_AD_HOC_ENTITLEMENTS"
   fi
-  codesign --force --sign - --options runtime --entitlements "$APP_SIGN_ENTITLEMENTS" "$APP"
+  codesign --force --sign - --entitlements "$APP_SIGN_ENTITLEMENTS" "$APP"
 fi
 
 Scripts/audit-app-store-bundle.sh "$APP"
