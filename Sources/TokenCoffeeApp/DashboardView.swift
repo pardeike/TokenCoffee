@@ -7,6 +7,7 @@ struct DashboardView: View {
     @ObservedObject var model: AppModel
     @Environment(\.openURL) private var openURL
     @State private var selectedPowerMode: PowerSessionMode = .off
+    @State private var isCloseButtonHovered = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -21,23 +22,23 @@ struct DashboardView: View {
 
             contentSection
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(EdgeInsets(top: 12, leading: 12, bottom: 4, trailing: 12))
         .frame(width: 480, height: 272, alignment: .topLeading)
-        .background(.regularMaterial)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private var powerControls: some View {
         HStack(spacing: 8) {
             Picker("Power", selection: $selectedPowerMode) {
                 Text("Off").tag(PowerSessionMode.off)
-                Text("Mac awake").tag(PowerSessionMode.keepAwake)
-                Text("Screen on").tag(PowerSessionMode.keepAwakeDisplay)
+                Text("Keep Mac awake").tag(PowerSessionMode.keepAwake)
+                Text("Keep screen on").tag(PowerSessionMode.keepAwakeDisplay)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
             .font(.system(size: 12, weight: .semibold))
-            .frame(width: 248)
+            .frame(width: 340)
             .onAppear {
                 selectedPowerMode = model.powerMode
             }
@@ -65,14 +66,18 @@ struct DashboardView: View {
                     NSApp.terminate(nil)
                 }
             } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 22, height: 22)
-                    .contentShape(Circle())
+                ZStack {
+                    Circle()
+                        .fill(Color.primary.opacity(isCloseButtonHovered ? 0.12 : 0.08))
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.primary.opacity(isCloseButtonHovered ? 0.48 : 0.34))
+                }
+                .frame(width: 22, height: 22)
+                .contentShape(Circle())
             }
             .buttonStyle(.plain)
+            .onHover { isCloseButtonHovered = $0 }
             .help("Quit")
         }
         .frame(maxWidth: .infinity)
@@ -104,7 +109,8 @@ struct DashboardView: View {
             QuotaGraphView(
                 samples: model.graphSamples,
                 projection: model.projection,
-                snapshot: model.quotaSnapshot
+                snapshot: model.quotaSnapshot,
+                now: model.referenceDate
             )
             .frame(height: 146)
             .padding(.bottom, 4)
@@ -124,7 +130,7 @@ struct DashboardView: View {
             if let estimate {
                 Text("estimate \(percent(estimate))")
                     .font(.system(size: 15, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(.white)
+                    .foregroundStyle(estimateColor(estimate))
                     .help("Cycle-run forecast at renew")
             }
 
@@ -217,11 +223,11 @@ struct DashboardView: View {
                 }
 
             case let .signingIn(login):
-                VStack(spacing: 13) {
+                VStack(spacing: 10) {
                     authHeader(
                         systemImage: "keyboard",
-                        title: "Enter This Code",
-                        detail: "Open the sign-in page, then enter the code shown here."
+                        title: "Token Coffee Device Code",
+                        detail: "If ChatGPT asks for an Authenticator code, use your Authenticator app first."
                     )
 
                     Text(login.userCode ?? "Waiting...")
@@ -231,6 +237,13 @@ struct DashboardView: View {
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity)
                         .help("Codex device code")
+
+                    Text("Enter this code only when the browser asks for a device code.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     HStack(spacing: 10) {
                         Button {
@@ -449,11 +462,11 @@ private struct QuotaGraphView: View {
     let samples: [QuotaSample]
     let projection: QuotaProjection
     let snapshot: RateLimitSnapshot?
+    let now: Date
 
     var body: some View {
         if let resetDate = projection.weeklyResetDate {
             let startDate = graphStartDate(resetDate: resetDate)
-            let now = Date()
             Chart {
                 ForEach(dayBands(startDate: startDate, resetDate: resetDate)) { band in
                     RectangleMark(
@@ -462,7 +475,7 @@ private struct QuotaGraphView: View {
                         yStart: .value("Low", 0),
                         yEnd: .value("High", 105)
                     )
-                    .foregroundStyle(band.isHighlighted ? Color.white.opacity(0.035) : Color.clear)
+                    .foregroundStyle(band.isHighlighted ? Color.primary.opacity(0.035) : Color.clear)
                 }
 
                 ForEach(dayBoundaries(startDate: startDate, resetDate: resetDate)) { boundary in
@@ -605,7 +618,7 @@ private struct QuotaGraphView: View {
         }
         if stored.isEmpty,
            let weekly = snapshot?.secondary {
-            return [GraphPoint(date: Date(), percent: graphPercent(weekly.usedPercent), series: "actual")]
+            return [GraphPoint(date: now, percent: graphPercent(weekly.usedPercent), series: "actual")]
         }
         return stored
     }

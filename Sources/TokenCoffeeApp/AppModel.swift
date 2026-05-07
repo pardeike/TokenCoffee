@@ -29,6 +29,7 @@ final class AppModel: ObservableObject {
     private let sampleStore: QuotaSampleStore
     private let sampleSyncService: CloudQuotaSampleSyncService
     private let failSafeInstaller: ClamshellFailSafeInstaller
+    private let demoScenario: DemoQuotaScenario?
     private var refreshTimer: Timer?
     private var quotaClientEventTask: Task<Void, Never>?
     private var activeCodexLogin: CodexDeviceCodeLogin?
@@ -38,17 +39,24 @@ final class AppModel: ObservableObject {
         quotaClient: CodexRateLimitClient,
         sampleStore: QuotaSampleStore,
         sampleSyncService: CloudQuotaSampleSyncService,
-        failSafeInstaller: ClamshellFailSafeInstaller
+        failSafeInstaller: ClamshellFailSafeInstaller,
+        demoScenario: DemoQuotaScenario? = nil
     ) {
         self.powerController = powerController
         self.quotaClient = quotaClient
         self.sampleStore = sampleStore
         self.sampleSyncService = sampleSyncService
         self.failSafeInstaller = failSafeInstaller
+        self.demoScenario = demoScenario
+        self.powerMode = demoScenario == nil ? TokenCoffeeDefaults.preferredPowerMode() : .keepAwakeDisplay
     }
 
     var projection: QuotaProjection {
-        QuotaProjectionEngine.make(snapshot: quotaSnapshot, samples: quotaSamples)
+        QuotaProjectionEngine.make(snapshot: quotaSnapshot, samples: quotaSamples, now: referenceDate)
+    }
+
+    var referenceDate: Date {
+        demoScenario?.now ?? Date()
     }
 
     var graphSamples: [QuotaSample] {
@@ -61,15 +69,24 @@ final class AppModel: ObservableObject {
 
         let startDate = resetDate.addingTimeInterval(-TimeInterval(durationMinutes * 60))
         let limitId = snapshot.limitId ?? "codex"
+        let now = referenceDate
         return quotaSamples
-            .filter { $0.limitId == limitId && $0.capturedAt >= startDate && $0.capturedAt <= Date() }
+            .filter { $0.limitId == limitId && $0.capturedAt >= startDate && $0.capturedAt <= now }
             .sorted { $0.capturedAt < $1.capturedAt }
     }
 
     func start() {
         TokenCoffeeDefaults.setClosedDisplayModeEnabled(false)
+        if let demoScenario {
+            startDemoMode(demoScenario)
+            return
+        }
+
         if let executableURL = Bundle.main.executableURL {
             try? failSafeInstaller.install(bundleExecutableURL: executableURL)
+        }
+        if powerMode != .off {
+            applyPowerConfiguration()
         }
         startQuotaClientEvents()
         quotaSamples = (try? sampleStore.load()) ?? []
@@ -89,20 +106,29 @@ final class AppModel: ObservableObject {
     }
 
     func setPanelVisible(_ visible: Bool) {
-        if visible {
+        if visible, demoScenario == nil {
             refreshQuota()
         }
     }
 
     func setPowerMode(_ mode: PowerSessionMode) {
+        if demoScenario != nil {
+            powerMode = .keepAwakeDisplay
+            return
+        }
+
         guard powerMode != mode else {
             return
         }
         powerMode = mode
+        TokenCoffeeDefaults.setPreferredPowerMode(mode)
         applyPowerConfiguration()
     }
 
     func refreshQuota() {
+        guard demoScenario == nil else {
+            return
+        }
         guard !isRefreshingQuota else {
             return
         }
@@ -149,6 +175,9 @@ final class AppModel: ObservableObject {
     }
 
     func beginCodexSignIn() {
+        guard demoScenario == nil else {
+            return
+        }
         guard !codexSignInState.isLoginFlowActive else {
             return
         }
@@ -214,6 +243,10 @@ final class AppModel: ObservableObject {
     }
 
     func logoutCodex() {
+        guard demoScenario == nil else {
+            return
+        }
+
         activeCodexLogin = nil
         quotaSnapshot = nil
         lastQuotaErrorDate = nil
@@ -372,6 +405,20 @@ final class AppModel: ObservableObject {
                 lastQuotaErrorMessage = message
             }
         }
+    }
+
+    private func startDemoMode(_ scenario: DemoQuotaScenario) {
+        powerMode = .keepAwakeDisplay
+        powerErrorMessage = nil
+        quotaSnapshot = scenario.snapshot
+        quotaSamples = scenario.samples
+        lastQuotaRefresh = scenario.now
+        lastQuotaErrorDate = nil
+        lastQuotaErrorMessage = nil
+        isRefreshingQuota = false
+        quotaSyncStatus = .localOnly
+        activeCodexLogin = nil
+        codexSignInState = .signedIn(scenario.account)
     }
 }
 

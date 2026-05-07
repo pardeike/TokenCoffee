@@ -25,7 +25,6 @@ xcodebuild $PROVISIONING_ARGS -scheme TokenCoffee -configuration Release -derive
 
 if [ "$AD_HOC_SIGN" -eq 1 ]; then
   find "$APP/Contents/Frameworks" -type d -name "*.framework" -prune -exec codesign --force --sign - --options runtime {} \;
-  codesign --verify --verbose=2 "$APP/Contents/MacOS/codex"
   if [ -f "$APP_ENTITLEMENTS" ]; then
     APP_SIGN_ENTITLEMENTS="$APP_ENTITLEMENTS"
   else
@@ -46,6 +45,8 @@ PLIST
   fi
   codesign --force --sign - --options runtime --entitlements "$APP_SIGN_ENTITLEMENTS" "$APP"
 fi
+
+Scripts/audit-app-store-bundle.sh "$APP"
 
 rm -rf dist
 mkdir -p dist

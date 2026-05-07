@@ -22,6 +22,38 @@ final class PowerSessionControllerTests: XCTestCase {
         XCTAssertEqual(client.releasedIDs, [2, 1])
         XCTAssertEqual(client.clamshellDisabledValues, [true, false])
     }
+
+    func testPreferredPowerModeDefaultsToOff() {
+        let (defaults, suiteName) = temporaryUserDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        XCTAssertEqual(TokenCoffeeDefaults.preferredPowerMode(userDefaults: defaults), .off)
+    }
+
+    func testPreferredPowerModeRoundTrips() {
+        let (defaults, suiteName) = temporaryUserDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        TokenCoffeeDefaults.setPreferredPowerMode(.keepAwakeDisplay, userDefaults: defaults)
+
+        XCTAssertEqual(TokenCoffeeDefaults.preferredPowerMode(userDefaults: defaults), .keepAwakeDisplay)
+    }
+
+    func testInvalidPreferredPowerModeDefaultsToOff() {
+        let (defaults, suiteName) = temporaryUserDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set("not-a-mode", forKey: TokenCoffeeDefaults.preferredPowerModeKey)
+
+        XCTAssertEqual(TokenCoffeeDefaults.preferredPowerMode(userDefaults: defaults), .off)
+    }
+
+    private func temporaryUserDefaults() -> (UserDefaults, String) {
+        let suiteName = "com.pardeike.TokenCoffee.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        return (defaults, suiteName)
+    }
 }
 
 private final class FakePowerAssertionClient: PowerAssertionClient {

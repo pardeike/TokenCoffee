@@ -15,7 +15,7 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.panel = PersistentPanel(
             contentRect: NSRect(x: 0, y: 0, width: 480, height: 272),
-            styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
+            styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
@@ -40,8 +40,9 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
             .store(in: &cancellables)
 
         panel.delegate = self
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
         panel.isMovableByWindowBackground = true
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
@@ -56,7 +57,8 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
             model.setPanelVisible(false)
         } else {
             positionPanel()
-            panel.orderFrontRegardless()
+            NSApp.activate()
+            panel.makeKeyAndOrderFront(nil)
             model.setPanelVisible(true)
         }
     }

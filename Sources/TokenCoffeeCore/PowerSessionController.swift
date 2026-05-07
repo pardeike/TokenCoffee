@@ -167,8 +167,21 @@ public final class IOKitPowerAssertionClient: PowerAssertionClient {
 public enum TokenCoffeeDefaults {
     public static let domain = "com.pardeike.TokenCoffee"
     public static let closedDisplayModeEnabledKey = "closedDisplayModeEnabled"
+    public static let preferredPowerModeKey = "preferredPowerMode"
 
     public static func setClosedDisplayModeEnabled(_ enabled: Bool, userDefaults: UserDefaults = .standard) {
         userDefaults.set(enabled, forKey: closedDisplayModeEnabledKey)
+    }
+
+    public static func preferredPowerMode(userDefaults: UserDefaults = .standard) -> PowerSessionMode {
+        guard let rawValue = userDefaults.string(forKey: preferredPowerModeKey),
+              let mode = PowerSessionMode(rawValue: rawValue) else {
+            return .off
+        }
+        return mode
+    }
+
+    public static func setPreferredPowerMode(_ mode: PowerSessionMode, userDefaults: UserDefaults = .standard) {
+        userDefaults.set(mode.rawValue, forKey: preferredPowerModeKey)
     }
 }

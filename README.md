@@ -26,15 +26,9 @@ The release build is ad-hoc signed but not notarized. If macOS blocks the first 
 
 - Apple Silicon Mac
 - macOS 15.0 or newer
-- Codex CLI installed and signed in
+- ChatGPT account with Codex access
 
-Token Coffee reads Codex limits through:
-
-```sh
-codex app-server --listen stdio://
-```
-
-It looks for `codex` in `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, and then `PATH`.
+Token Coffee signs in with ChatGPT device-code login and reads Codex usage with a native HTTPS client. It does not require the Codex CLI.
 
 For local builds you also need:
 
@@ -45,7 +39,6 @@ With Homebrew:
 
 ```sh
 brew install xcodegen
-brew install --cask codex
 ```
 
 ## Use
@@ -132,4 +125,4 @@ rm -rf "$HOME/Library/Application Support/TokenCoffee"
 
 ## Privacy
 
-Token Coffee does not send usage data to its own service. It runs the local Codex CLI to read your account limits, stores quota samples locally, optionally syncs those samples through your private CloudKit database when the app is signed with iCloud entitlements, and uses macOS power APIs for the awake modes.
+Token Coffee does not send usage data to its own service. It signs in directly with ChatGPT/Codex to read your account limits, stores authentication tokens in Keychain, stores quota samples locally, optionally syncs those samples through your private CloudKit database when the app is signed with iCloud entitlements, and uses macOS power APIs for the awake modes.

@@ -13,12 +13,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("tokencoffee-quota-samples.jsonl")
         )
         let powerController = PowerSessionController()
+        let demoScenario = Self.demoScenarioIfRequested()
         let model = AppModel(
             powerController: powerController,
             quotaClient: CodexRateLimitClient(),
             sampleStore: sampleStore,
             sampleSyncService: CloudQuotaSampleSyncService(),
-            failSafeInstaller: ClamshellFailSafeInstaller()
+            failSafeInstaller: ClamshellFailSafeInstaller(),
+            demoScenario: demoScenario
         )
         self.model = model
         self.statusPanelController = StatusPanelController(model: model)
@@ -29,5 +31,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         model?.shutdown()
+    }
+
+    private static func demoScenarioIfRequested() -> DemoQuotaScenario? {
+        guard CommandLine.arguments.contains("--demo") else {
+            return nil
+        }
+
+        guard let url = Bundle.main.url(forResource: "DemoQuotaData", withExtension: "json") else {
+            NSLog("Token Coffee demo mode requested, but DemoQuotaData.json is missing.")
+            return nil
+        }
+
+        do {
+            let data = try Data(contentsOf: url)
+            let demoData = try JSONDecoder().decode(DemoQuotaData.self, from: data)
+            return try demoData.makeScenario()
+        } catch {
+            NSLog("Token Coffee demo mode requested, but demo data could not be loaded: \(error.localizedDescription)")
+            return nil
+        }
     }
 }

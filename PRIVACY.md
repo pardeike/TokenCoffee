@@ -1,6 +1,6 @@
 # Token Coffee Privacy Policy
 
-Last updated: May 5, 2026
+Last updated: May 7, 2026
 
 Token Coffee is a macOS menu-bar utility for viewing Codex quota status, forecasting usage, syncing short-lived quota samples through iCloud, and controlling Mac awake behavior.
 
@@ -20,9 +20,9 @@ The developer does not operate a separate sync service for this data.
 
 ## Codex Sign-In and Quota Status
 
-Token Coffee uses a bundled Codex app-server helper to let the user sign in and read Codex quota information. Codex authentication and account handling are provided by the Codex/OpenAI service.
+Token Coffee signs in directly with ChatGPT/Codex using OpenAI's device-code flow and reads Codex quota information from the ChatGPT/Codex service. Codex authentication and account handling are provided by the Codex/OpenAI service.
 
-Token Coffee stores Codex authentication data inside its macOS app container. Token Coffee does not send Codex authentication data to a Token Coffee server.
+Token Coffee stores Codex authentication tokens in the user's macOS Keychain. Token Coffee does not send Codex authentication data to a Token Coffee server.
 
 ## Awake Controls
 

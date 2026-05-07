@@ -1,4 +1,3 @@
-import CodexAppServerKit
 import Foundation
 
 public struct CodexAccountSnapshot: Equatable, Sendable {
@@ -55,7 +54,7 @@ public actor CodexRateLimitClient {
         public var errorDescription: String? {
             switch self {
             case let .codexNotFound(message):
-                "Could not find the bundled Codex executable. \(message)"
+                "Codex integration is unavailable. \(message)"
             case .needsSignIn:
                 "Codex needs ChatGPT sign-in."
             case .timedOut:
@@ -63,7 +62,7 @@ public actor CodexRateLimitClient {
             case let .invalidResponse(message):
                 "Invalid Codex rate-limit response: \(message)"
             case let .serverError(message):
-                "Codex app-server returned an error: \(message)"
+                "Codex usage service returned an error: \(message)"
             }
         }
     }
@@ -73,13 +72,11 @@ public actor CodexRateLimitClient {
     }
 
     private nonisolated let eventsBox = CodexEventStreamBox<CodexRateLimitEvent>()
-    private let executableURL: URL?
-    private let codexHomeDirectory: URL?
+    private let authService: CodexNativeAuthService
+    private let usageService: CodexNativeUsageService
     private let timeout: TimeInterval
-    private let startupTimeout: TimeInterval
-    private var client: CodexAppServerClient?
-    private var notificationTask: Task<Void, Never>?
-    private var diagnosticTask: Task<Void, Never>?
+    private var loginTask: Task<Void, Never>?
+    private var activeLoginId: String?
 
     public init(
         executableURL: URL? = nil,
@@ -87,39 +84,63 @@ public actor CodexRateLimitClient {
         timeout: TimeInterval = 12,
         startupTimeout: TimeInterval = 60
     ) {
-        self.executableURL = executableURL
-        self.codexHomeDirectory = codexHomeDirectory
+        let configuration = CodexNativeConfiguration.defaultConfiguration()
+        let httpClient = URLSessionCodexHTTPClient()
+        let tokenStore = KeychainCodexAuthTokenStore()
+        self.authService = CodexNativeAuthService(
+            configuration: configuration,
+            httpClient: httpClient,
+            tokenStore: tokenStore
+        )
+        self.usageService = CodexNativeUsageService(
+            configuration: configuration,
+            httpClient: httpClient
+        )
         self.timeout = timeout
-        self.startupTimeout = startupTimeout
+
+        _ = executableURL
+        _ = codexHomeDirectory
+        _ = startupTimeout
+    }
+
+    init(
+        configuration: CodexNativeConfiguration,
+        httpClient: CodexHTTPClient,
+        tokenStore: CodexAuthTokenStore,
+        timeout: TimeInterval = 12
+    ) {
+        self.authService = CodexNativeAuthService(
+            configuration: configuration,
+            httpClient: httpClient,
+            tokenStore: tokenStore
+        )
+        self.usageService = CodexNativeUsageService(
+            configuration: configuration,
+            httpClient: httpClient
+        )
+        self.timeout = timeout
     }
 
     public func fetch() async throws -> CodexRateLimitFetchResult {
         do {
-            let client = try await ensureClient()
             eventsBox.yield(.diagnostic("Reading Codex account."))
-            let accountResult = try await withTimeout {
-                try await client.readAccount(refreshToken: false)
+            let tokens = try await withTimeout {
+                try await self.authService.validTokens(refreshIfNeeded: true)
             }
-            let account = Self.mapAccount(accountResult.account)
-            eventsBox.yield(.accountChanged(account))
-
-            if accountResult.account == nil, accountResult.requiresOpenaiAuth != false {
+            guard let tokens else {
                 eventsBox.yield(.needsSignIn)
                 throw ClientError.needsSignIn
             }
 
+            let account = authService.accountSnapshot(for: tokens)
+            eventsBox.yield(.accountChanged(account))
+
             eventsBox.yield(.diagnostic("Reading Codex rate limits."))
-            let rateLimits = try await withTimeout {
-                try await client.readRateLimits()
-            }
-            let response = try Self.mapRateLimits(rateLimits)
+            let response = try await readRateLimitsWithOneRefresh(tokens: tokens)
             eventsBox.yield(.rateLimitsChanged(response))
             return CodexRateLimitFetchResult(response: response, account: account)
         } catch {
-            let mappedError = mapError(error)
-            if shouldResetClient(after: mappedError) {
-                await resetClient()
-            }
+            let mappedError = await mapError(error)
             if mappedError as? ClientError != .needsSignIn {
                 eventsBox.yield(.diagnostic(mappedError.localizedDescription))
             }
@@ -128,141 +149,80 @@ public actor CodexRateLimitClient {
     }
 
     public func beginDeviceCodeLogin() async throws -> CodexDeviceCodeLogin {
-        let client = try await ensureClient()
-        let login = try await withTimeout {
-            try await client.startChatGPTDeviceCodeLogin()
+        loginTask?.cancel()
+        loginTask = nil
+        activeLoginId = nil
+
+        let deviceCode = try await withTimeout {
+            try await self.authService.requestDeviceCode()
         }
-        let result = CodexDeviceCodeLogin(
-            loginId: login.loginId,
-            verificationURL: login.verificationURL,
-            userCode: login.userCode
+        let login = CodexDeviceCodeLogin(
+            loginId: deviceCode.deviceAuthId,
+            verificationURL: deviceCode.verificationURL,
+            userCode: deviceCode.userCode
         )
-        eventsBox.yield(.loginStarted(result))
-        return result
+        activeLoginId = deviceCode.deviceAuthId
+        eventsBox.yield(.loginStarted(login))
+
+        loginTask = Task { [eventsBox] in
+            do {
+                let tokens = try await self.authService.completeDeviceCodeLogin(deviceCode)
+                let account = self.authService.accountSnapshot(for: tokens)
+                eventsBox.yield(.loginCompleted(success: true, errorMessage: nil))
+                eventsBox.yield(.accountChanged(account))
+            } catch is CancellationError {
+                eventsBox.yield(.diagnostic("Codex sign-in was cancelled."))
+            } catch {
+                eventsBox.yield(.loginCompleted(success: false, errorMessage: error.localizedDescription))
+            }
+        }
+
+        return login
     }
 
     public func cancelLogin(loginId: String?) async {
-        guard let loginId else {
+        guard loginId == nil || loginId == activeLoginId else {
             return
         }
-        do {
-            let client = try await ensureClient()
-            try await withTimeout {
-                try await client.cancelLogin(loginId: loginId)
-            }
-        } catch {
-            eventsBox.yield(.diagnostic(error.localizedDescription))
-        }
+        loginTask?.cancel()
+        loginTask = nil
+        activeLoginId = nil
     }
 
     public func logout() async throws {
-        let client = try await ensureClient()
-        try await withTimeout {
-            try await client.logout()
-        }
+        loginTask?.cancel()
+        loginTask = nil
+        activeLoginId = nil
+        try await authService.logout()
         eventsBox.yield(.accountChanged(nil))
         eventsBox.yield(.needsSignIn)
     }
 
     public func stop() async {
-        notificationTask?.cancel()
-        diagnosticTask?.cancel()
-        notificationTask = nil
-        diagnosticTask = nil
-        if let client {
-            await client.stop()
-        }
-        client = nil
+        loginTask?.cancel()
+        loginTask = nil
+        activeLoginId = nil
     }
 
-    private func ensureClient() async throws -> CodexAppServerClient {
-        if let client {
-            return client
-        }
-
-        let executableURL: URL
+    private func readRateLimitsWithOneRefresh(tokens: CodexAuthTokens) async throws -> CodexRateLimitsResponse {
         do {
-            executableURL = try self.executableURL ?? CodexAppServerConfiguration.bundledExecutable(named: "codex")
-        } catch {
-            throw ClientError.codexNotFound(error.localizedDescription)
-        }
-
-        let configuration = CodexAppServerConfiguration(
-            executableURL: executableURL,
-            codexHomeDirectory: codexHomeDirectory ?? CodexAppServerConfiguration.defaultCodexHomeDirectory(),
-            clientInfo: CodexClientInfo(
-                name: "token_coffee",
-                title: "Token Coffee",
-                version: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1"
-            )
-        )
-        let client = CodexAppServerClient(configuration: configuration)
-        startObserving(client: client)
-
-        do {
-            eventsBox.yield(.diagnostic("Starting Codex app-server."))
-            try await withTimeout(seconds: startupTimeout) {
-                try await client.start()
+            return try await withTimeout {
+                try await self.usageService.fetchRateLimits(tokens: tokens)
             }
-            eventsBox.yield(.diagnostic("Codex app-server started."))
-        } catch {
-            await client.stop()
-            self.client = nil
-            throw mapError(error)
-        }
-
-        self.client = client
-        return client
-    }
-
-    private func startObserving(client: CodexAppServerClient) {
-        notificationTask?.cancel()
-        diagnosticTask?.cancel()
-
-        notificationTask = Task { [weak self, client] in
-            for await notification in client.notifications {
-                await self?.handle(notification)
+        } catch CodexNativeAuthError.unauthorized {
+            let refreshed = try await withTimeout {
+                try await self.authService.refreshStoredTokens()
             }
-        }
-
-        diagnosticTask = Task { [eventsBox, client] in
-            for await line in client.diagnostics {
-                eventsBox.yield(.diagnostic(line))
+            return try await withTimeout {
+                try await self.usageService.fetchRateLimits(tokens: refreshed)
             }
-        }
-    }
-
-    private func handle(_ notification: CodexNotification) async {
-        switch notification.method {
-        case "account/login/completed":
-            do {
-                let completed = try notification.decodedParams(as: CodexLoginCompletedNotification.self)
-                eventsBox.yield(.loginCompleted(success: completed.success, errorMessage: completed.error))
-            } catch {
-                eventsBox.yield(.diagnostic(error.localizedDescription))
+        } catch CodexNativeUsageError.unauthorized {
+            let refreshed = try await withTimeout {
+                try await self.authService.refreshStoredTokens()
             }
-
-        case "account/updated":
-            do {
-                let updated = try notification.decodedParams(as: CodexAccountUpdatedNotification.self)
-                let account = updated.authMode.map {
-                    CodexAccountSnapshot(type: $0, email: nil, planType: updated.planType)
-                }
-                eventsBox.yield(.accountChanged(account))
-            } catch {
-                eventsBox.yield(.diagnostic(error.localizedDescription))
+            return try await withTimeout {
+                try await self.usageService.fetchRateLimits(tokens: refreshed)
             }
-
-        case "account/rateLimits/updated":
-            do {
-                let rateLimits = try notification.decodedParams(as: CodexRateLimitsReadResult.self)
-                eventsBox.yield(.rateLimitsChanged(try Self.mapRateLimits(rateLimits)))
-            } catch {
-                eventsBox.yield(.diagnostic(error.localizedDescription))
-            }
-
-        default:
-            break
         }
     }
 
@@ -287,113 +247,45 @@ public actor CodexRateLimitClient {
             }
 
             guard let result = try await group.next() else {
-                throw ClientError.invalidResponse("Codex app-server did not return a result.")
+                throw ClientError.invalidResponse("Codex usage service did not return a result.")
             }
             group.cancelAll()
             return result
         }
     }
 
-    private func mapError(_ error: Error) -> Error {
+    private func mapError(_ error: Error) async -> Error {
         if let clientError = error as? ClientError {
             return clientError
         }
-        if let codexError = error as? CodexError {
-            switch codexError {
-            case let .rpcError(_, message, _):
+
+        if let authError = error as? CodexNativeAuthError {
+            switch authError {
+            case .needsSignIn, .unauthorized:
+                eventsBox.yield(.needsSignIn)
+                return ClientError.needsSignIn
+            case .loginTimedOut:
+                return ClientError.timedOut
+            case let .invalidResponse(message):
+                return ClientError.invalidResponse(message)
+            case let .server(message):
                 return ClientError.serverError(message)
-            case let .executableNotFound(searchedNames):
-                return ClientError.codexNotFound(searchedNames.joined(separator: ", "))
-            default:
-                return ClientError.serverError(codexError.localizedDescription)
             }
         }
+
+        if let usageError = error as? CodexNativeUsageError {
+            switch usageError {
+            case .unauthorized:
+                eventsBox.yield(.needsSignIn)
+                return ClientError.needsSignIn
+            case let .invalidResponse(message):
+                return ClientError.invalidResponse(message)
+            case let .server(message):
+                return ClientError.serverError(message)
+            }
+        }
+
         return error
-    }
-
-    private func shouldResetClient(after error: Error) -> Bool {
-        if let clientError = error as? ClientError {
-            switch clientError {
-            case .timedOut, .invalidResponse, .serverError, .codexNotFound:
-                return true
-            case .needsSignIn:
-                return false
-            }
-        }
-
-        if let codexError = error as? CodexError {
-            switch codexError {
-            case .processExited, .processNotRunning, .processLaunchFailed, .malformedMessage, .cancelled:
-                return true
-            case .executableNotFound, .processAlreadyRunning, .missingField, .invalidURL, .rpcError:
-                return false
-            }
-        }
-
-        return false
-    }
-
-    private func resetClient() async {
-        if let client {
-            await client.stop()
-        }
-        client = nil
-    }
-
-    private static func mapAccount(_ account: CodexAccount?) -> CodexAccountSnapshot? {
-        account.map {
-            CodexAccountSnapshot(type: $0.type, email: $0.email, planType: $0.planType)
-        }
-    }
-
-    private static func mapRateLimits(_ result: CodexRateLimitsReadResult) throws -> CodexRateLimitsResponse {
-        guard let preferredBucket = result.preferredBucket else {
-            throw ClientError.invalidResponse("Codex app-server returned no rate-limit buckets.")
-        }
-
-        var mappedBuckets: [String: RateLimitSnapshot]?
-        if let buckets = result.rateLimitsByLimitId {
-            mappedBuckets = [:]
-            for (key, bucket) in buckets {
-                mappedBuckets?[key] = mapBucket(bucket)
-            }
-        }
-
-        return CodexRateLimitsResponse(
-            rateLimits: mapBucket(preferredBucket),
-            rateLimitsByLimitId: mappedBuckets
-        )
-    }
-
-    private static func mapBucket(_ bucket: CodexRateLimitBucket) -> RateLimitSnapshot {
-        RateLimitSnapshot(
-            limitId: bucket.limitId,
-            limitName: bucket.limitName,
-            primary: mapWindow(bucket.primary),
-            secondary: mapWindow(bucket.secondary),
-            credits: mapCredits(bucket.credits),
-            planType: bucket.planType,
-            rateLimitReachedType: bucket.rateLimitReachedType
-        )
-    }
-
-    private static func mapWindow(_ window: CodexAppServerKit.CodexRateLimitWindow?) -> RateLimitWindow? {
-        guard let window, let usedPercent = window.usedPercent else {
-            return nil
-        }
-
-        return RateLimitWindow(
-            usedPercent: usedPercent,
-            windowDurationMins: window.windowDurationMins.map { Int($0.rounded()) },
-            resetsAt: window.resetsAt.map { Int($0) }
-        )
-    }
-
-    private static func mapCredits(_ value: CodexJSONValue?) -> CreditsSnapshot? {
-        guard let value else {
-            return nil
-        }
-        return try? value.decoded(as: CreditsSnapshot.self)
     }
 }
 

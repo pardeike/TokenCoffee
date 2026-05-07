@@ -27,10 +27,6 @@ settings:
       ONLY_ACTIVE_ARCH: YES
     Release:
       ONLY_ACTIVE_ARCH: NO
-packages:
-  CodexAppServerKit:
-    url: https://github.com/pardeike/CodexAppServerKit.git
-    branch: main
 targets:
   TokenCoffeeCore:
     type: framework
@@ -45,9 +41,8 @@ targets:
         CFBundleShortVersionString: "0.1"
         CFBundleVersion: "1"
     dependencies:
-      - package: CodexAppServerKit
-        product: CodexAppServerKit
       - sdk: IOKit.framework
+      - sdk: Security.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.pardeike.TokenCoffeeCore
@@ -71,16 +66,6 @@ targets:
       - sdk: AppKit.framework
       - sdk: CloudKit.framework
       - sdk: Security.framework
-    postBuildScripts:
-      - name: Sign Codex Helper
-        script: ./Scripts/sign-codex-helper.sh
-        inputFiles:
-          - $(SRCROOT)/Vendor/Codex/0.128.0/codex-aarch64-apple-darwin
-          - $(SRCROOT)/Sources/TokenCoffeeApp/CodexHelper.inherit.entitlements
-          - $(SRCROOT)/Scripts/sign-codex-helper.sh
-        outputFiles:
-          - $(TARGET_BUILD_DIR)/$(EXECUTABLE_FOLDER_PATH)/codex
-          - $(DERIVED_FILE_DIR)/codex-helper-entitlements.plist
     info:
       path: Sources/TokenCoffeeApp/Info.plist
       properties:
@@ -93,6 +78,7 @@ targets:
         LSApplicationCategoryType: public.app-category.developer-tools
         LSUIElement: true
         LSMinimumSystemVersion: "15.0"
+        ITSAppUsesNonExemptEncryption: false
         NSHumanReadableCopyright: "Copyright Andreas Pardeike"
         NSSupportsAutomaticTermination: false
         NSSupportsSuddenTermination: false
