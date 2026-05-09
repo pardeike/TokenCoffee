@@ -473,18 +473,6 @@ private struct QuotaGraphView: View {
                         .lineStyle(StrokeStyle(lineWidth: 0.5))
                 }
 
-                if let cycleForecast = projection.cycleRunForecast {
-                    ForEach(cycleForecast.corridorPoints, id: \.date) { point in
-                        AreaMark(
-                            x: .value("Time", point.date),
-                            yStart: .value("Low", graphPercent(point.lowerUsedPercent)),
-                            yEnd: .value("High", graphPercent(point.upperUsedPercent))
-                        )
-                        .foregroundStyle(Color.blue.opacity(0.11))
-                        .interpolationMethod(.linear)
-                    }
-                }
-
                 ForEach(actualPoints) { point in
                     LineMark(
                         x: .value("Time", point.date),
@@ -549,7 +537,7 @@ private struct QuotaGraphView: View {
             .chartPlotStyle { plotArea in
                 plotArea.overlay {
                     if let cycleForecast = projection.cycleRunForecast {
-                        CycleForecastLineOverlay(
+                        CycleForecastCorridorOverlay(
                             forecast: cycleForecast,
                             startDate: startDate,
                             resetDate: resetDate,
@@ -705,13 +693,11 @@ private struct GraphPoint: Identifiable {
     }
 }
 
-private struct CycleForecastLineOverlay: View {
+private struct CycleForecastCorridorOverlay: View {
     let forecast: QuotaCycleRunForecast
     let startDate: Date
     let resetDate: Date
     let ceiling: Double
-
-    private let threshold = 100.0
 
     var body: some View {
         GeometryReader { proxy in
@@ -722,62 +708,84 @@ private struct CycleForecastLineOverlay: View {
                     return
                 }
 
-                let forecastPath = forecastPath(in: size)
-                drawThresholded(
-                    path: forecastPath,
-                    in: size,
-                    context: &context,
-                    belowColor: .blue.opacity(0.28),
-                    aboveColor: .red.opacity(0.46),
-                    lineWidth: 4.5,
-                    lineCap: .butt,
-                    lineJoin: .round
-                )
+                let earliestSegments = forecast.earliestLineSegments.isEmpty
+                    ? forecast.lineSegments
+                    : forecast.earliestLineSegments
+                let latestSegments = forecast.latestLineSegments.isEmpty
+                    ? forecast.lineSegments
+                    : forecast.latestLineSegments
+                guard earliestSegments.isEmpty == false,
+                      latestSegments.isEmpty == false else {
+                    return
+                }
+
+                let earliestLine = linePath(from: earliestSegments, in: size)
+                let latestLine = linePath(from: latestSegments, in: size)
+                let fill = fillPath(between: earliestSegments, and: latestSegments, in: size)
+                context.opacity = corridorOpacity
+                context.drawLayer { layer in
+                    layer.fill(fill, with: .color(.blue))
+                    layer.stroke(earliestLine, with: .color(.blue), style: lineStyle)
+                    layer.stroke(latestLine, with: .color(.blue), style: lineStyle)
+                }
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
     }
 
-    private func forecastPath(in size: CGSize) -> Path {
+    private func linePath(from segments: [QuotaForecastLineSegment], in size: CGSize) -> Path {
         var path = Path()
-        var hasCurrentPoint = false
-        let segments = forecast.lineSegments
+        let sortedSegments = segments
             .sorted { $0.startDate < $1.startDate }
             .filter { $0.endDate > $0.startDate }
+        guard let first = sortedSegments.first else {
+            return path
+        }
 
-        for segment in segments {
-            if hasCurrentPoint == false {
-                path.move(to: plotPoint(date: segment.startDate, percent: segment.startUsedPercent, in: size))
-                hasCurrentPoint = true
-            }
+        path.move(to: plotPoint(date: first.startDate, percent: first.startUsedPercent, in: size))
+        for segment in sortedSegments {
             path.addLine(to: plotPoint(date: segment.endDate, percent: segment.endUsedPercent, in: size))
         }
         return path
     }
 
-    private func drawThresholded(
-        path: Path,
-        in size: CGSize,
-        context: inout GraphicsContext,
-        belowColor: Color,
-        aboveColor: Color,
-        lineWidth: Double,
-        lineCap: CGLineCap,
-        lineJoin: CGLineJoin
-    ) {
-        let thresholdY = y(percent: threshold, in: size)
-        let style = StrokeStyle(lineWidth: lineWidth, lineCap: lineCap, lineJoin: lineJoin)
-        let aboveRect = CGRect(x: 0, y: 0, width: size.width, height: thresholdY)
-        let belowRect = CGRect(x: 0, y: thresholdY, width: size.width, height: size.height - thresholdY)
+    private func fillPath(
+        between firstSegments: [QuotaForecastLineSegment],
+        and secondSegments: [QuotaForecastLineSegment],
+        in size: CGSize
+    ) -> Path {
+        let firstSorted = firstSegments.sorted { $0.startDate < $1.startDate }
+        let secondSorted = secondSegments.sorted { $0.startDate < $1.startDate }
+        let dates = uniqueDates((firstSorted + secondSorted).flatMap { [$0.startDate, $0.endDate] })
+        let fillPoints = dates.compactMap { date -> ForecastBandPoint? in
+            guard let firstPercent = percent(at: date, in: firstSorted),
+                  let secondPercent = percent(at: date, in: secondSorted) else {
+                return nil
+            }
 
-        context.drawLayer { layer in
-            layer.clip(to: Path(belowRect))
-            layer.stroke(path, with: .color(belowColor), style: style)
+            let firstY = y(percent: firstPercent, in: size)
+            let secondY = y(percent: secondPercent, in: size)
+            return ForecastBandPoint(
+                x: x(date: date, in: size),
+                topY: min(firstY, secondY),
+                bottomY: max(firstY, secondY)
+            )
         }
-        context.drawLayer { layer in
-            layer.clip(to: Path(aboveRect))
-            layer.stroke(path, with: .color(aboveColor), style: style)
+
+        var path = Path()
+        guard let firstPoint = fillPoints.first else {
+            return path
         }
+
+        path.move(to: CGPoint(x: firstPoint.x, y: firstPoint.topY))
+        for point in fillPoints.dropFirst() {
+            path.addLine(to: CGPoint(x: point.x, y: point.topY))
+        }
+        for point in fillPoints.reversed() {
+            path.addLine(to: CGPoint(x: point.x, y: point.bottomY))
+        }
+        path.closeSubpath()
+        return path
     }
 
     private func plotPoint(date: Date, percent: Double, in size: CGSize) -> CGPoint {
@@ -797,6 +805,56 @@ private struct CycleForecastLineOverlay: View {
         let value = min(ceiling, max(0, percent))
         return size.height * (1 - value / ceiling)
     }
+
+    private func percent(at date: Date, in segments: [QuotaForecastLineSegment]) -> Double? {
+        guard let first = segments.first else {
+            return nil
+        }
+        if date <= first.startDate {
+            return first.startUsedPercent
+        }
+
+        for segment in segments {
+            if date <= segment.startDate {
+                return segment.startUsedPercent
+            }
+            if date <= segment.endDate {
+                let duration = segment.endDate.timeIntervalSince(segment.startDate)
+                guard duration > 0 else {
+                    return segment.endUsedPercent
+                }
+                let progress = date.timeIntervalSince(segment.startDate) / duration
+                return segment.startUsedPercent + (segment.endUsedPercent - segment.startUsedPercent) * progress
+            }
+        }
+
+        return segments.last?.endUsedPercent
+    }
+
+    private func uniqueDates(_ dates: [Date]) -> [Date] {
+        var unique: [Date] = []
+        for date in dates.sorted() {
+            guard let last = unique.last,
+                  abs(date.timeIntervalSince(last)) < 0.5 else {
+                unique.append(date)
+                continue
+            }
+        }
+        return unique
+    }
+
+    private var lineStyle: StrokeStyle {
+        StrokeStyle(lineWidth: forecastLineWidth, lineCap: .round, lineJoin: .round)
+    }
+
+    private let corridorOpacity = 0.24
+    private let forecastLineWidth = 2.0
+}
+
+private struct ForecastBandPoint {
+    let x: Double
+    let topY: Double
+    let bottomY: Double
 }
 
 private extension DateFormatter {

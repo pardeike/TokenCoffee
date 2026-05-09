@@ -243,6 +243,36 @@ final class QuotaProjectionTests: XCTestCase {
         XCTAssertEqual(first.startUsedPercent, 22, accuracy: 0.001)
     }
 
+    func testCycleRunForecastExposesConnectedBoundaryLinesForCorridorRendering() {
+        let day: TimeInterval = 24 * 60 * 60
+        let hour: TimeInterval = 60 * 60
+        let start = Date(timeIntervalSince1970: 1_000)
+        let reset = start.addingTimeInterval(7 * day)
+        let now = start.addingTimeInterval(2 * day + 12 * hour)
+        let snapshot = snapshot(usedPercent: 10, reset: reset)
+        let samples = [
+            sample(at: start.addingTimeInterval(8 * hour), usedPercent: 0, reset: reset),
+            sample(at: start.addingTimeInterval(10 * hour), usedPercent: 5, reset: reset),
+            sample(at: start.addingTimeInterval(day + 9 * hour), usedPercent: 5, reset: reset),
+            sample(at: start.addingTimeInterval(day + 12 * hour), usedPercent: 10, reset: reset),
+            sample(at: now, usedPercent: 10, reset: reset)
+        ]
+
+        let projection = QuotaProjectionEngine.make(snapshot: snapshot, samples: samples, now: now)
+        guard let forecast = projection.cycleRunForecast else {
+            XCTFail("Expected cycle forecast")
+            return
+        }
+
+        for segments in [forecast.earliestLineSegments, forecast.latestLineSegments] {
+            XCTAssertEqual(segments.first?.startDate, now)
+            XCTAssertEqual(segments.first?.startUsedPercent ?? 0, 10, accuracy: 0.001)
+            XCTAssertEqual(segments.last?.endDate, reset)
+            XCTAssertTrue(segments.contains { $0.kind == .projectedActivity })
+            assertForecastLineSegmentsAreConnected(segments)
+        }
+    }
+
     func testCycleRunForecastMergesShortFlatGapInsideActivityPeriod() {
         let day: TimeInterval = 24 * 60 * 60
         let hour: TimeInterval = 60 * 60

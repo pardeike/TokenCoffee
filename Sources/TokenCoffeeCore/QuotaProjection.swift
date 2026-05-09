@@ -12,6 +12,8 @@ public struct QuotaCycleRunForecast: Equatable, Sendable {
     public let ghostRuns: [QuotaForecastRun]
     public let averageRuns: [QuotaForecastRun]
     public let lineSegments: [QuotaForecastLineSegment]
+    public let earliestLineSegments: [QuotaForecastLineSegment]
+    public let latestLineSegments: [QuotaForecastLineSegment]
     public let corridorPoints: [QuotaForecastCorridorPoint]
 
     public init(
@@ -19,12 +21,16 @@ public struct QuotaCycleRunForecast: Equatable, Sendable {
         ghostRuns: [QuotaForecastRun],
         averageRuns: [QuotaForecastRun] = [],
         lineSegments: [QuotaForecastLineSegment] = [],
+        earliestLineSegments: [QuotaForecastLineSegment] = [],
+        latestLineSegments: [QuotaForecastLineSegment] = [],
         corridorPoints: [QuotaForecastCorridorPoint]
     ) {
         self.projectedWeeklyUsedPercentAtReset = projectedWeeklyUsedPercentAtReset
         self.ghostRuns = ghostRuns
         self.averageRuns = averageRuns
         self.lineSegments = lineSegments
+        self.earliestLineSegments = earliestLineSegments
+        self.latestLineSegments = latestLineSegments
         self.corridorPoints = corridorPoints
     }
 }
@@ -373,6 +379,18 @@ public enum QuotaProjectionEngine {
             resetDate: resetDate,
             events: scheduled.average
         )
+        let earliestLineSegments = forecastLineSegments(
+            current: current,
+            now: now,
+            resetDate: resetDate,
+            events: scheduled.earliest
+        )
+        let latestLineSegments = forecastLineSegments(
+            current: current,
+            now: now,
+            resetDate: resetDate,
+            events: scheduled.latest
+        )
         let ghostRuns = scheduledGhostRuns(
             clusters: clusters,
             averageEvents: scheduled.average,
@@ -407,6 +425,8 @@ public enum QuotaProjectionEngine {
             ghostRuns: ghostRuns,
             averageRuns: averageRuns,
             lineSegments: lineSegments,
+            earliestLineSegments: earliestLineSegments,
+            latestLineSegments: latestLineSegments,
             corridorPoints: corridorPoints
         )
     }
