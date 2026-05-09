@@ -27,7 +27,18 @@ final class DemoQuotaDataTests: XCTestCase {
         )
         let forecast = try XCTUnwrap(projection.cycleRunForecast)
 
-        XCTAssertEqual(forecast.projectedWeeklyUsedPercentAtReset, 132, accuracy: 10)
+        XCTAssertEqual(forecast.lowProjectedWeeklyUsedPercentAtReset, 120.179, accuracy: 0.001)
+        XCTAssertEqual(forecast.highProjectedWeeklyUsedPercentAtReset, 168.503, accuracy: 0.001)
+        XCTAssertGreaterThan(forecast.highProjectedWeeklyUsedPercentAtReset - forecast.lowProjectedWeeklyUsedPercentAtReset, 40)
+        let futureDayGains = (4...6).map { dayIndex in
+            activityGain(
+                in: forecast.highLineSegments,
+                startDate: windowStart.addingTimeInterval(TimeInterval(dayIndex * 24 * 60 * 60)),
+                endDate: windowStart.addingTimeInterval(TimeInterval((dayIndex + 1) * 24 * 60 * 60))
+            )
+        }
+        XCTAssertTrue(futureDayGains.allSatisfy { $0 > 20 }, "\(futureDayGains)")
+        XCTAssertLessThan((futureDayGains.max() ?? 0) / max(0.001, futureDayGains.min() ?? 0), 2)
         XCTAssertEqual(projection.paceState, .slowDown)
     }
 
@@ -37,5 +48,30 @@ final class DemoQuotaDataTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("Sources/TokenCoffeeApp/Resources/DemoQuotaData.json")
+    }
+
+    private func activityGain(
+        in segments: [QuotaForecastLineSegment],
+        startDate: Date,
+        endDate: Date
+    ) -> Double {
+        segments.reduce(0) { total, segment in
+            guard segment.kind != .projectedIdle,
+                  segment.endDate > startDate,
+                  segment.startDate < endDate else {
+                return total
+            }
+
+            let overlapStart = max(segment.startDate, startDate)
+            let overlapEnd = min(segment.endDate, endDate)
+            let segmentDuration = segment.endDate.timeIntervalSince(segment.startDate)
+            guard overlapEnd > overlapStart,
+                  segmentDuration > 0 else {
+                return total
+            }
+
+            let overlapFraction = overlapEnd.timeIntervalSince(overlapStart) / segmentDuration
+            return total + (segment.endUsedPercent - segment.startUsedPercent) * overlapFraction
+        }
     }
 }

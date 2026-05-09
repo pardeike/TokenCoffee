@@ -9,26 +9,38 @@ public enum QuotaPaceState: String, Codable, Equatable, Sendable {
 
 public struct QuotaCycleRunForecast: Equatable, Sendable {
     public let projectedWeeklyUsedPercentAtReset: Double
+    public let lowProjectedWeeklyUsedPercentAtReset: Double
+    public let highProjectedWeeklyUsedPercentAtReset: Double
     public let ghostRuns: [QuotaForecastRun]
     public let averageRuns: [QuotaForecastRun]
     public let lineSegments: [QuotaForecastLineSegment]
+    public let lowLineSegments: [QuotaForecastLineSegment]
+    public let highLineSegments: [QuotaForecastLineSegment]
     public let earliestLineSegments: [QuotaForecastLineSegment]
     public let latestLineSegments: [QuotaForecastLineSegment]
     public let corridorPoints: [QuotaForecastCorridorPoint]
 
     public init(
         projectedWeeklyUsedPercentAtReset: Double,
+        lowProjectedWeeklyUsedPercentAtReset: Double? = nil,
+        highProjectedWeeklyUsedPercentAtReset: Double? = nil,
         ghostRuns: [QuotaForecastRun],
         averageRuns: [QuotaForecastRun] = [],
         lineSegments: [QuotaForecastLineSegment] = [],
+        lowLineSegments: [QuotaForecastLineSegment] = [],
+        highLineSegments: [QuotaForecastLineSegment] = [],
         earliestLineSegments: [QuotaForecastLineSegment] = [],
         latestLineSegments: [QuotaForecastLineSegment] = [],
         corridorPoints: [QuotaForecastCorridorPoint]
     ) {
         self.projectedWeeklyUsedPercentAtReset = projectedWeeklyUsedPercentAtReset
+        self.lowProjectedWeeklyUsedPercentAtReset = lowProjectedWeeklyUsedPercentAtReset ?? projectedWeeklyUsedPercentAtReset
+        self.highProjectedWeeklyUsedPercentAtReset = highProjectedWeeklyUsedPercentAtReset ?? projectedWeeklyUsedPercentAtReset
         self.ghostRuns = ghostRuns
         self.averageRuns = averageRuns
         self.lineSegments = lineSegments
+        self.lowLineSegments = lowLineSegments.isEmpty ? lineSegments : lowLineSegments
+        self.highLineSegments = highLineSegments.isEmpty ? lineSegments : highLineSegments
         self.earliestLineSegments = earliestLineSegments
         self.latestLineSegments = latestLineSegments
         self.corridorPoints = corridorPoints
@@ -191,7 +203,9 @@ public enum QuotaProjectionEngine {
             now: now,
             samples: currentWindowSamples
         )
-        let paceProjected = cycleForecast?.projectedWeeklyUsedPercentAtReset ?? projected
+        let paceProjected = cycleForecast?.highProjectedWeeklyUsedPercentAtReset
+            ?? cycleForecast?.projectedWeeklyUsedPercentAtReset
+            ?? projected
         let state = paceState(current: current, projected: paceProjected)
 
         return QuotaProjection(
@@ -327,18 +341,6 @@ public enum QuotaProjectionEngine {
             return nil
         }
 
-        let observations = runs.compactMap {
-            cycleRunObservation(for: $0, weeklyStartDate: startDate)
-        }
-        guard observations.isEmpty == false else {
-            return nil
-        }
-
-        let clusters = clusteredRunObservations(observations)
-        guard clusters.isEmpty == false else {
-            return nil
-        }
-
         let currentCycle = cycleIndex(for: now, weeklyStartDate: startDate)
         let currentCycleStart = cycleStartDate(weeklyStartDate: startDate, cycleIndex: currentCycle)
         let currentCycleGain = usageGain(
@@ -346,87 +348,78 @@ public enum QuotaProjectionEngine {
             startDate: currentCycleStart,
             endDate: now
         )
-        let historicalGain = historicalCycleGain(observations, before: currentCycle)
-        let fallbackGain = robustAverage(cycleGains(from: observations))
-        let effectiveHistoricalGain = historicalGain > 0 ? historicalGain : fallbackGain
-        let dailyGain = blendedDailyGain(currentGain: currentCycleGain, historicalGain: effectiveHistoricalGain)
-        guard dailyGain >= minimumUsageDelta else {
+        let dayPatterns = dailyPatterns(from: runs, weeklyStartDate: startDate, now: now)
+        guard dayPatterns.contains(where: \.isWorkedDay) else {
             return nil
         }
 
-        let clusterGainTotal = clusters.reduce(0) { $0 + $1.averageGain }
-        guard clusterGainTotal >= minimumUsageDelta else {
+        guard let rhythm = dailyHotspotRhythm(from: dayPatterns, currentCycle: currentCycle) else {
             return nil
         }
 
-        let scheduled = scheduledForecastRuns(
-            clusters: clusters,
-            dailyGain: dailyGain,
-            clusterGainTotal: clusterGainTotal,
+        let lowDailyGain = conservativeDailyGain(from: dayPatterns, currentCycle: currentCycle)
+        guard lowDailyGain >= minimumUsageDelta else {
+            return nil
+        }
+
+        let highGainModel = pessimisticDailyGainModel(
+            from: dayPatterns,
+            currentCycle: currentCycle,
+            conservativeDailyGain: lowDailyGain
+        )
+        let lowScenario = forecastScenario(
+            rhythm: rhythm,
+            current: current,
             weeklyStartDate: startDate,
             currentCycle: currentCycle,
             now: now,
             resetDate: resetDate
-        )
-        guard scheduled.average.isEmpty == false else {
-            return nil
+        ) { dayIndex, _ in
+            dayIndex == currentCycle
+                ? max(0, lowDailyGain - currentCycleGain)
+                : lowDailyGain
         }
-
-        let averageRuns = forecastRuns(current: current, events: scheduled.average)
-        let lineSegments = forecastLineSegments(
+        let highScenario = forecastScenario(
+            rhythm: rhythm,
             current: current,
-            now: now,
-            resetDate: resetDate,
-            events: scheduled.average
-        )
-        let earliestLineSegments = forecastLineSegments(
-            current: current,
-            now: now,
-            resetDate: resetDate,
-            events: scheduled.earliest
-        )
-        let latestLineSegments = forecastLineSegments(
-            current: current,
-            now: now,
-            resetDate: resetDate,
-            events: scheduled.latest
-        )
-        let ghostRuns = scheduledGhostRuns(
-            clusters: clusters,
-            averageEvents: scheduled.average,
-            dailyGain: dailyGain,
-            clusterGainTotal: clusterGainTotal,
             weeklyStartDate: startDate,
             currentCycle: currentCycle,
             now: now,
-            resetDate: resetDate,
-            current: current
-        )
+            resetDate: resetDate
+        ) { dayIndex, futureDayOffset in
+            let target = highGainModel.targetGain(forFutureDayOffset: futureDayOffset)
+            return dayIndex == currentCycle
+                ? max(0, target - currentCycleGain)
+                : target
+        }
+
         let timepoints = forecastTimepoints(
             now: now,
             resetDate: resetDate,
-            eventGroups: [scheduled.average, scheduled.earliest, scheduled.latest]
+            eventGroups: [lowScenario.events, highScenario.events]
         )
         let corridorPoints = timepoints.map { date in
-            let average = forecastPercent(at: date, current: current, events: scheduled.average)
-            let earliest = forecastPercent(at: date, current: current, events: scheduled.earliest)
-            let latest = forecastPercent(at: date, current: current, events: scheduled.latest)
+            let low = forecastPercent(at: date, current: current, events: lowScenario.events)
+            let high = forecastPercent(at: date, current: current, events: highScenario.events)
             return QuotaForecastCorridorPoint(
                 date: date,
-                averageUsedPercent: average,
-                lowerUsedPercent: min(earliest, latest),
-                upperUsedPercent: max(earliest, latest)
+                averageUsedPercent: (low + high) / 2,
+                lowerUsedPercent: min(low, high),
+                upperUsedPercent: max(low, high)
             )
         }
-        let projected = forecastPercent(at: resetDate, current: current, events: scheduled.average)
 
         return QuotaCycleRunForecast(
-            projectedWeeklyUsedPercentAtReset: projected,
-            ghostRuns: ghostRuns,
-            averageRuns: averageRuns,
-            lineSegments: lineSegments,
-            earliestLineSegments: earliestLineSegments,
-            latestLineSegments: latestLineSegments,
+            projectedWeeklyUsedPercentAtReset: lowScenario.projectedUsedPercent,
+            lowProjectedWeeklyUsedPercentAtReset: lowScenario.projectedUsedPercent,
+            highProjectedWeeklyUsedPercentAtReset: highScenario.projectedUsedPercent,
+            ghostRuns: highScenario.runs,
+            averageRuns: lowScenario.runs,
+            lineSegments: lowScenario.lineSegments,
+            lowLineSegments: lowScenario.lineSegments,
+            highLineSegments: highScenario.lineSegments,
+            earliestLineSegments: lowScenario.lineSegments,
+            latestLineSegments: highScenario.lineSegments,
             corridorPoints: corridorPoints
         )
     }
@@ -445,49 +438,6 @@ public enum QuotaProjectionEngine {
             usageSamples.append(UsageSample(capturedAt: now, weeklyUsedPercent: current))
         }
         return usageSamples.sorted { $0.capturedAt < $1.capturedAt }
-    }
-
-    private static func cycleRunObservation(
-        for run: UsageBurst,
-        weeklyStartDate: Date
-    ) -> CycleRunObservation? {
-        let cycleIndex = cycleIndex(for: run.startDate, weeklyStartDate: weeklyStartDate)
-        let cycleStart = cycleStartDate(weeklyStartDate: weeklyStartDate, cycleIndex: cycleIndex)
-        let startOffset = run.startDate.timeIntervalSince(cycleStart)
-        let endOffset = run.endDate.timeIntervalSince(cycleStart)
-        guard endOffset > startOffset,
-              startOffset >= 0,
-              startOffset < dayDuration * 2 else {
-            return nil
-        }
-
-        return CycleRunObservation(
-            cycleIndex: cycleIndex,
-            startOffset: startOffset,
-            endOffset: endOffset,
-            gain: run.usedPercentGain
-        )
-    }
-
-    private static func clusteredRunObservations(_ observations: [CycleRunObservation]) -> [CycleRunCluster] {
-        var clusters: [CycleRunCluster] = []
-        for observation in observations.sorted(by: { $0.startOffset < $1.startOffset }) {
-            let matchingIndex = clusters.indices.min { lhs, rhs in
-                abs(clusters[lhs].averageStartOffset - observation.startOffset)
-                    < abs(clusters[rhs].averageStartOffset - observation.startOffset)
-            }.flatMap { index -> Int? in
-                abs(clusters[index].averageStartOffset - observation.startOffset) <= runClusterStartToleranceSeconds
-                    ? index
-                    : nil
-            }
-
-            if let matchingIndex {
-                clusters[matchingIndex].append(observation)
-            } else {
-                clusters.append(CycleRunCluster(observation: observation))
-            }
-        }
-        return clusters.sorted { $0.averageStartOffset < $1.averageStartOffset }
     }
 
     private static func usageGain(
@@ -514,132 +464,208 @@ public enum QuotaProjectionEngine {
         return gain
     }
 
-    private static func historicalCycleGain(
-        _ observations: [CycleRunObservation],
-        before currentCycle: Int
-    ) -> Double {
-        let gains = cycleGains(from: observations.filter { $0.cycleIndex < currentCycle })
-        return robustAverage(gains)
-    }
-
-    private static func cycleGains(from observations: [CycleRunObservation]) -> [Double] {
-        let grouped = Dictionary(grouping: observations, by: \.cycleIndex)
-        return grouped.values
-            .map { cycleObservations in
-                cycleObservations.reduce(0) { $0 + $1.gain }
-            }
-            .filter { $0 >= minimumUsageDelta }
-    }
-
-    private static func blendedDailyGain(currentGain: Double, historicalGain: Double) -> Double {
-        if currentGain >= minimumUsageDelta, historicalGain >= minimumUsageDelta {
-            return currentGainWeight * currentGain + (1 - currentGainWeight) * historicalGain
-        }
-        if currentGain >= minimumUsageDelta {
-            return currentGain
-        }
-        return historicalGain
-    }
-
-    private static func scheduledForecastRuns(
-        clusters: [CycleRunCluster],
-        dailyGain: Double,
-        clusterGainTotal: Double,
+    private static func dailyPatterns(
+        from sessions: [UsageBurst],
         weeklyStartDate: Date,
-        currentCycle: Int,
-        now: Date,
-        resetDate: Date
-    ) -> ForecastSchedule {
-        var average: [ScheduledForecastRun] = []
-        var earliest: [ScheduledForecastRun] = []
-        var latest: [ScheduledForecastRun] = []
+        now: Date
+    ) -> [CycleDayPattern] {
+        let currentCycle = cycleIndex(for: now, weeklyStartDate: weeklyStartDate)
+        return (0...currentCycle).map { dayIndex in
+            let dayStartDate = cycleStartDate(weeklyStartDate: weeklyStartDate, cycleIndex: dayIndex)
+            let dayEndDate = min(now, dayStartDate.addingTimeInterval(dayDuration))
+            let daySessions = sessions.filter { session in
+                session.startDate >= dayStartDate
+                    && session.startDate < dayStartDate.addingTimeInterval(dayDuration)
+            }
+            return CycleDayPattern(
+                dayIndex: dayIndex,
+                startDate: dayStartDate,
+                observedFraction: max(0, min(1, dayEndDate.timeIntervalSince(dayStartDate) / dayDuration)),
+                totalGain: daySessions.reduce(0) { $0 + $1.usedPercentGain },
+                sessions: daySessions
+            )
+        }
+    }
 
-        for cycle in currentCycle..<7 {
-            let cycleStart = cycleStartDate(weeklyStartDate: weeklyStartDate, cycleIndex: cycle)
-            for cluster in clusters {
-                let gain = dailyGain * (cluster.averageGain / clusterGainTotal)
-                if let event = scheduledForecastRun(
-                    cycleStart: cycleStart,
-                    startOffset: cluster.averageStartOffset,
-                    endOffset: cluster.averageEndOffset,
-                    gain: gain,
-                    now: now,
-                    resetDate: resetDate
-                ) {
-                    average.append(event)
-                }
-                if let event = scheduledForecastRun(
-                    cycleStart: cycleStart,
-                    startOffset: cluster.minimumStartOffset,
-                    endOffset: cluster.minimumEndOffset,
-                    gain: gain,
-                    now: now,
-                    resetDate: resetDate
-                ) {
-                    earliest.append(event)
-                }
-                if let event = scheduledForecastRun(
-                    cycleStart: cycleStart,
-                    startOffset: cluster.maximumStartOffset,
-                    endOffset: cluster.maximumEndOffset,
-                    gain: gain,
-                    now: now,
-                    resetDate: resetDate
-                ) {
-                    latest.append(event)
-                }
+    private static func dailyHotspotRhythm(
+        from patterns: [CycleDayPattern],
+        currentCycle: Int
+    ) -> DailyHotspotRhythm? {
+        let completeWorkedPatterns = patterns.filter {
+            $0.isWorkedDay && ($0.dayIndex < currentCycle || $0.observedFraction >= 0.85)
+        }
+        var weightedPatterns = Array(completeWorkedPatterns.suffix(4)).map {
+            WeightedCycleDayPattern(pattern: $0, weight: 1)
+        }
+
+        if completeWorkedPatterns.count < 2,
+           let currentPattern = patterns.first(where: { $0.dayIndex == currentCycle }),
+           currentPattern.isWorkedDay,
+           currentPattern.observedFraction < 0.85 {
+            weightedPatterns.append(WeightedCycleDayPattern(pattern: currentPattern, weight: 0.5))
+        }
+
+        let observations = weightedPatterns.flatMap { weightedPattern in
+            rhythmObservations(from: weightedPattern)
+        }
+        guard observations.isEmpty == false else {
+            return nil
+        }
+
+        var clusters: [DailyHotspotCluster] = []
+        for observation in observations.sorted(by: { $0.startOffset < $1.startOffset }) {
+            if let nearestClusterIndex = clusters.indices.min(by: {
+                abs(clusters[$0].startOffset - observation.startOffset)
+                    < abs(clusters[$1].startOffset - observation.startOffset)
+            }),
+               abs(clusters[nearestClusterIndex].startOffset - observation.startOffset) <= burstMergeGapSeconds {
+                clusters[nearestClusterIndex].append(observation)
+            } else {
+                clusters.append(DailyHotspotCluster(observation: observation))
             }
         }
 
-        return ForecastSchedule(
-            average: average.sorted { $0.startDate < $1.startDate },
-            earliest: earliest.sorted { $0.startDate < $1.startDate },
-            latest: latest.sorted { $0.startDate < $1.startDate }
+        let totalWeightedGain = clusters.reduce(0) { $0 + $1.weightedGain }
+        guard totalWeightedGain >= minimumUsageDelta else {
+            return nil
+        }
+
+        let rawHotspots = clusters
+            .map { cluster in
+                DailyHotspot(
+                    startOffset: max(0, cluster.startOffset),
+                    duration: max(60, cluster.duration),
+                    share: cluster.weightedGain / totalWeightedGain
+                )
+            }
+            .sorted { $0.startOffset < $1.startOffset }
+
+        let keptHotspots = rawHotspots.count > 1
+            ? rawHotspots.filter { $0.share >= minimumHotspotShare }
+            : rawHotspots
+        let effectiveHotspots = keptHotspots.isEmpty ? rawHotspots : keptHotspots
+        let shareTotal = effectiveHotspots.reduce(0) { $0 + $1.share }
+        guard shareTotal > 0 else {
+            return nil
+        }
+
+        return DailyHotspotRhythm(
+            hotspots: effectiveHotspots.map {
+                DailyHotspot(
+                    startOffset: $0.startOffset,
+                    duration: $0.duration,
+                    share: $0.share / shareTotal
+                )
+            }
         )
     }
 
-    private static func scheduledGhostRuns(
-        clusters: [CycleRunCluster],
-        averageEvents: [ScheduledForecastRun],
-        dailyGain: Double,
-        clusterGainTotal: Double,
+    private static func rhythmObservations(
+        from weightedPattern: WeightedCycleDayPattern
+    ) -> [DailyHotspotObservation] {
+        weightedPattern.pattern.sessions.compactMap { session in
+            let startOffset = session.startDate.timeIntervalSince(weightedPattern.pattern.startDate)
+            let endOffset = session.endDate.timeIntervalSince(weightedPattern.pattern.startDate)
+            let duration = max(60, endOffset - startOffset)
+            let weightedGain = session.usedPercentGain * weightedPattern.weight
+            guard weightedGain >= minimumUsageDelta else {
+                return nil
+            }
+            return DailyHotspotObservation(
+                startOffset: startOffset,
+                duration: duration,
+                weightedGain: weightedGain
+            )
+        }
+    }
+
+    private static func conservativeDailyGain(
+        from patterns: [CycleDayPattern],
+        currentCycle: Int
+    ) -> Double {
+        let completeWorkedPatterns = patterns.filter {
+            $0.isWorkedDay && ($0.dayIndex < currentCycle || $0.observedFraction >= 0.85)
+        }
+        let basis = completeWorkedPatterns.isEmpty
+            ? patterns.filter(\.isWorkedDay)
+            : completeWorkedPatterns
+        return median(Array(basis.suffix(4)).map(\.totalGain))
+    }
+
+    private static func pessimisticDailyGainModel(
+        from patterns: [CycleDayPattern],
+        currentCycle: Int,
+        conservativeDailyGain: Double
+    ) -> PessimisticDailyGainModel {
+        let completeWorkedPatterns = patterns.filter {
+            $0.isWorkedDay && $0.dayIndex < currentCycle
+        }
+        let workedPatterns = patterns.filter(\.isWorkedDay)
+        let basis = completeWorkedPatterns.count >= 2 ? completeWorkedPatterns : workedPatterns
+        let gains = Array(basis.suffix(5)).map(\.totalGain).filter { $0 >= minimumUsageDelta }
+        guard gains.isEmpty == false else {
+            return PessimisticDailyGainModel(baseGain: conservativeDailyGain, growthStep: 0)
+        }
+
+        let typical = median(gains)
+        let recent = weightedRecentAverage(gains)
+        let latest = gains.last ?? conservativeDailyGain
+        let prior = gains.dropLast()
+        let priorTypical = prior.isEmpty ? typical : median(Array(prior))
+        let latestLift = max(0, latest - priorTypical)
+        let positiveGrowth = weightedPositiveGrowth(gains)
+        let recentLift = max(0, recent - typical)
+        let hasGrowthSignal = latest > priorTypical + minimumUsageDelta || positiveGrowth >= minimumUsageDelta
+        let growthStep = hasGrowthSignal
+            ? max(latestLift * 0.45, positiveGrowth, recentLift * 0.65)
+            : 0
+        let baseGain = max(conservativeDailyGain, latest, recent)
+
+        return PessimisticDailyGainModel(baseGain: baseGain, growthStep: growthStep)
+    }
+
+    private static func forecastScenario(
+        rhythm: DailyHotspotRhythm,
+        current: Double,
         weeklyStartDate: Date,
         currentCycle: Int,
         now: Date,
         resetDate: Date,
-        current: Double
-    ) -> [QuotaForecastRun] {
-        var ghostRuns: [QuotaForecastRun] = []
-        for cycle in currentCycle..<7 {
-            let cycleStart = cycleStartDate(weeklyStartDate: weeklyStartDate, cycleIndex: cycle)
-            for cluster in clusters {
-                let clusterGain = dailyGain * (cluster.averageGain / clusterGainTotal)
-                for observation in cluster.observations {
-                    let observationGain = observation.gain * clusterGain / max(cluster.averageGain, minimumUsageDelta)
-                    guard let event = scheduledForecastRun(
-                        cycleStart: cycleStart,
-                        startOffset: observation.startOffset,
-                        endOffset: observation.endOffset,
-                        gain: observationGain,
-                        now: now,
-                        resetDate: resetDate
-                    ) else {
-                        continue
-                    }
+        targetRemainingGain: (Int, Int) -> Double
+    ) -> ForecastScenario {
+        var events: [ScheduledForecastRun] = []
 
-                    let startUsedPercent = forecastPercent(at: event.startDate, current: current, events: averageEvents)
-                    ghostRuns.append(
-                        QuotaForecastRun(
-                            startDate: event.startDate,
-                            endDate: event.endDate,
-                            startUsedPercent: startUsedPercent,
-                            endUsedPercent: startUsedPercent + event.gain
-                        )
-                    )
-                }
+        for dayIndex in currentCycle..<7 {
+            let targetGain = targetRemainingGain(dayIndex, dayIndex - currentCycle)
+            guard targetGain >= minimumUsageDelta else {
+                continue
             }
+
+            let dayStartDate = cycleStartDate(weeklyStartDate: weeklyStartDate, cycleIndex: dayIndex)
+            events += rhythm.scheduledRuns(
+                dayStartDate: dayStartDate,
+                targetGain: targetGain,
+                now: now,
+                resetDate: resetDate,
+                minimumGain: minimumUsageDelta,
+                normalizesClippedGain: dayIndex == currentCycle
+            )
         }
-        return ghostRuns.sorted { $0.startDate < $1.startDate }
+
+        let sortedEvents = events.sorted { $0.startDate < $1.startDate }
+        let lineSegments = forecastLineSegments(
+            current: current,
+            now: now,
+            resetDate: resetDate,
+            events: sortedEvents
+        )
+        let runs = forecastRuns(current: current, events: sortedEvents)
+        return ForecastScenario(
+            events: sortedEvents,
+            runs: runs,
+            lineSegments: lineSegments,
+            projectedUsedPercent: forecastPercent(at: resetDate, current: current, events: sortedEvents)
+        )
     }
 
     private static func forecastRuns(
@@ -749,37 +775,6 @@ public enum QuotaProjectionEngine {
         segments.append(segment)
     }
 
-    private static func scheduledForecastRun(
-        cycleStart: Date,
-        startOffset: TimeInterval,
-        endOffset: TimeInterval,
-        gain: Double,
-        now: Date,
-        resetDate: Date
-    ) -> ScheduledForecastRun? {
-        let originalStart = cycleStart.addingTimeInterval(startOffset)
-        let originalEnd = cycleStart.addingTimeInterval(max(endOffset, startOffset + minimumExpectedBurstSeconds))
-        guard originalEnd > now,
-              originalStart < resetDate else {
-            return nil
-        }
-
-        let start = max(originalStart, now)
-        let end = min(originalEnd, resetDate)
-        guard end > start else {
-            return nil
-        }
-
-        let originalDuration = max(1, originalEnd.timeIntervalSince(originalStart))
-        let remainingDuration = end.timeIntervalSince(start)
-        let remainingGain = gain * remainingDuration / originalDuration
-        guard remainingGain >= minimumUsageDelta else {
-            return nil
-        }
-
-        return ScheduledForecastRun(startDate: start, endDate: end, gain: remainingGain)
-    }
-
     private static func forecastTimepoints(
         now: Date,
         resetDate: Date,
@@ -871,6 +866,50 @@ public enum QuotaProjectionEngine {
         return (mean + median) / 2
     }
 
+    private static func median(_ values: [Double]) -> Double {
+        guard values.isEmpty == false else {
+            return 0
+        }
+
+        let sorted = values.sorted()
+        let middle = sorted.count / 2
+        if sorted.count.isMultiple(of: 2) {
+            return (sorted[middle - 1] + sorted[middle]) / 2
+        }
+        return sorted[middle]
+    }
+
+    private static func weightedRecentAverage(_ values: [Double]) -> Double {
+        guard values.isEmpty == false else {
+            return 0
+        }
+
+        var weightedTotal = 0.0
+        var totalWeight = 0.0
+        for (index, value) in values.enumerated() {
+            let weight = 1.0 + Double(index) / Double(max(1, values.count - 1))
+            weightedTotal += value * weight
+            totalWeight += weight
+        }
+        return weightedTotal / totalWeight
+    }
+
+    private static func weightedPositiveGrowth(_ values: [Double]) -> Double {
+        guard values.count >= 2 else {
+            return 0
+        }
+
+        var weightedTotal = 0.0
+        var totalWeight = 0.0
+        let lastDeltaIndex = max(1, values.count - 2)
+        for index in 1..<values.count {
+            let weight = 1.0 + Double(index - 1) / Double(lastDeltaIndex)
+            weightedTotal += max(0, values[index] - values[index - 1]) * weight
+            totalWeight += weight
+        }
+        return weightedTotal / totalWeight
+    }
+
     private static func paceState(current: Double, projected: Double) -> QuotaPaceState {
         if projected >= 100 || current >= 100 {
             return .slowDown
@@ -885,7 +924,7 @@ public enum QuotaProjectionEngine {
         guard let lhs else {
             return false
         }
-        return abs(lhs.timeIntervalSince(rhs)) < 1
+        return abs(lhs.timeIntervalSince(rhs)) < 5
     }
 
     private static let minimumUsageDelta: Double = 0.05
@@ -894,9 +933,8 @@ public enum QuotaProjectionEngine {
     private static let activeBurstGraceSeconds: TimeInterval = 10 * 60
     private static let minimumExpectedBurstSeconds: TimeInterval = 30 * 60
     private static let maximumBurstContinuationSeconds: TimeInterval = 30 * 60
+    private static let minimumHotspotShare = 0.03
     private static let dayDuration: TimeInterval = 24 * 60 * 60
-    private static let runClusterStartToleranceSeconds: TimeInterval = 3 * 60 * 60
-    private static let currentGainWeight = 0.65
 }
 
 private struct UsageSample {
@@ -934,64 +972,145 @@ private struct UsageBurst {
     }
 }
 
-private struct CycleRunObservation {
-    let cycleIndex: Int
+private struct CycleDayPattern {
+    let dayIndex: Int
+    let startDate: Date
+    let observedFraction: Double
+    let totalGain: Double
+    let sessions: [UsageBurst]
+
+    var isWorkedDay: Bool {
+        totalGain >= 0.5
+    }
+}
+
+private struct WeightedCycleDayPattern {
+    let pattern: CycleDayPattern
+    let weight: Double
+}
+
+private struct DailyHotspotObservation {
     let startOffset: TimeInterval
-    let endOffset: TimeInterval
-    let gain: Double
+    let duration: TimeInterval
+    let weightedGain: Double
 }
 
-private struct CycleRunCluster {
-    private(set) var observations: [CycleRunObservation]
+private struct DailyHotspotCluster {
+    private var weightedStartOffset: Double
+    private var weightedDuration: Double
+    private(set) var weightedGain: Double
 
-    init(observation: CycleRunObservation) {
-        self.observations = [observation]
+    init(observation: DailyHotspotObservation) {
+        weightedStartOffset = observation.startOffset * observation.weightedGain
+        weightedDuration = observation.duration * observation.weightedGain
+        weightedGain = observation.weightedGain
     }
 
-    mutating func append(_ observation: CycleRunObservation) {
-        observations.append(observation)
+    mutating func append(_ observation: DailyHotspotObservation) {
+        weightedStartOffset += observation.startOffset * observation.weightedGain
+        weightedDuration += observation.duration * observation.weightedGain
+        weightedGain += observation.weightedGain
     }
 
-    var averageStartOffset: TimeInterval {
-        average(observations.map(\.startOffset))
+    var startOffset: TimeInterval {
+        weightedStartOffset / max(weightedGain, 0.0001)
     }
 
-    var averageEndOffset: TimeInterval {
-        max(averageStartOffset + 1, average(observations.map(\.endOffset)))
+    var duration: TimeInterval {
+        weightedDuration / max(weightedGain, 0.0001)
     }
+}
 
-    var minimumStartOffset: TimeInterval {
-        observations.map(\.startOffset).min() ?? averageStartOffset
-    }
+private struct DailyHotspot {
+    let startOffset: TimeInterval
+    let duration: TimeInterval
+    let share: Double
+}
 
-    var maximumStartOffset: TimeInterval {
-        observations.map(\.startOffset).max() ?? averageStartOffset
-    }
+private struct ScheduledHotspot {
+    let startDate: Date
+    let endDate: Date
+    let weightedShare: Double
+}
 
-    var minimumEndOffset: TimeInterval {
-        max(minimumStartOffset + 1, observations.map(\.endOffset).min() ?? averageEndOffset)
-    }
+private struct DailyHotspotRhythm {
+    let hotspots: [DailyHotspot]
 
-    var maximumEndOffset: TimeInterval {
-        max(maximumStartOffset + 1, observations.map(\.endOffset).max() ?? averageEndOffset)
-    }
+    func scheduledRuns(
+        dayStartDate: Date,
+        targetGain: Double,
+        now: Date,
+        resetDate: Date,
+        minimumGain: Double,
+        normalizesClippedGain: Bool
+    ) -> [ScheduledForecastRun] {
+        let scheduledHotspots = hotspots.compactMap { hotspot -> ScheduledHotspot? in
+            let startDate = dayStartDate.addingTimeInterval(hotspot.startOffset)
+            let endDate = startDate.addingTimeInterval(max(60, hotspot.duration))
+            guard endDate > now,
+                  startDate < resetDate else {
+                return nil
+            }
 
-    var averageGain: Double {
-        average(observations.map(\.gain))
-    }
+            let clippedStartDate = max(startDate, now)
+            let clippedEndDate = min(endDate, resetDate)
+            guard clippedEndDate > clippedStartDate else {
+                return nil
+            }
 
-    private func average(_ values: [Double]) -> Double {
-        guard values.isEmpty == false else {
-            return 0
+            let remainingFraction = clippedEndDate.timeIntervalSince(clippedStartDate)
+                / max(1, endDate.timeIntervalSince(startDate))
+            let weightedShare = hotspot.share * remainingFraction
+            guard weightedShare > 0 else {
+                return nil
+            }
+
+            return ScheduledHotspot(
+                startDate: clippedStartDate,
+                endDate: clippedEndDate,
+                weightedShare: weightedShare
+            )
         }
-        return values.reduce(0, +) / Double(values.count)
+
+        let shareTotal = scheduledHotspots.reduce(0) { $0 + $1.weightedShare }
+        guard shareTotal > 0 else {
+            return []
+        }
+
+        return scheduledHotspots.compactMap { hotspot in
+            let gainShare = normalizesClippedGain
+                ? hotspot.weightedShare / shareTotal
+                : hotspot.weightedShare
+            let gain = targetGain * gainShare
+            guard gain >= minimumGain else {
+                return nil
+            }
+            return ScheduledForecastRun(
+                startDate: hotspot.startDate,
+                endDate: hotspot.endDate,
+                gain: gain
+            )
+        }
     }
 }
 
-private struct ForecastSchedule {
-    let average: [ScheduledForecastRun]
-    let earliest: [ScheduledForecastRun]
-    let latest: [ScheduledForecastRun]
+private struct PessimisticDailyGainModel {
+    let baseGain: Double
+    let growthStep: Double
+
+    func targetGain(forFutureDayOffset offset: Int) -> Double {
+        guard growthStep >= 0.05 else {
+            return baseGain
+        }
+        return baseGain + growthStep * Double(offset + 1)
+    }
+}
+
+private struct ForecastScenario {
+    let events: [ScheduledForecastRun]
+    let runs: [QuotaForecastRun]
+    let lineSegments: [QuotaForecastLineSegment]
+    let projectedUsedPercent: Double
 }
 
 private struct ScheduledForecastRun {
