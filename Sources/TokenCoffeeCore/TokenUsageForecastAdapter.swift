@@ -14,35 +14,20 @@ enum TokenUsageForecastAdapter {
             return nil
         }
 
-        let inputSamples = forecastInputSamples(
+        guard let input = makeForecastInput(
             current: current,
             startDate: startDate,
+            resetDate: resetDate,
             now: now,
             samples: samples
-        )
-        guard inputSamples.isEmpty == false,
-              hasUsageIncreases(inputSamples) else {
+        ),
+              input.hasUsageIncreases else {
             return nil
         }
 
-        let snapshot = UsageLimitSnapshot(
-            limitId: inputSamples.last?.limitId,
-            limitName: inputSamples.last?.limitName,
-            planType: inputSamples.last?.planType,
-            weeklyWindowMinutes: resetDate.timeIntervalSince(startDate) / 60,
-            elapsedWindowSeconds: now.timeIntervalSince(startDate),
-            weeklyUsedPercent: current,
-            samples: inputSamples.map { inputSample in
-                UsageSample(
-                    offsetSeconds: inputSample.date.timeIntervalSince(startDate),
-                    weeklyUsedPercent: inputSample.usedPercent
-                )
-            }
-        )
-
         let result: UsageForecastResult
         do {
-            result = try TokenUsageForecaster(parameters: .defaults).forecast(from: snapshot)
+            result = try forecast(input.snapshot)
         } catch {
             return nil
         }
@@ -97,6 +82,54 @@ enum TokenUsageForecastAdapter {
                 now: now
             )
         )
+    }
+
+    static func makeForecastInput(
+        current: Double,
+        startDate: Date,
+        resetDate: Date,
+        now: Date,
+        samples: [QuotaSample]
+    ) -> TokenUsageForecastInput? {
+        guard now < resetDate,
+              resetDate > startDate else {
+            return nil
+        }
+
+        let inputSamples = forecastInputSamples(
+            current: current,
+            startDate: startDate,
+            now: now,
+            samples: samples
+        )
+        guard inputSamples.isEmpty == false else {
+            return nil
+        }
+
+        let snapshot = UsageLimitSnapshot(
+            limitId: inputSamples.last?.limitId,
+            limitName: inputSamples.last?.limitName,
+            planType: inputSamples.last?.planType,
+            weeklyWindowMinutes: resetDate.timeIntervalSince(startDate) / 60,
+            elapsedWindowSeconds: now.timeIntervalSince(startDate),
+            weeklyUsedPercent: current,
+            samples: inputSamples.map { inputSample in
+                UsageSample(
+                    offsetSeconds: inputSample.date.timeIntervalSince(startDate),
+                    weeklyUsedPercent: inputSample.usedPercent
+                )
+            }
+        )
+
+        return TokenUsageForecastInput(
+            snapshot: snapshot,
+            inputSamples: inputSamples,
+            hasUsageIncreases: hasUsageIncreases(inputSamples)
+        )
+    }
+
+    static func forecast(_ snapshot: UsageLimitSnapshot) throws -> UsageForecastResult {
+        try TokenUsageForecaster(parameters: .defaults).forecast(from: snapshot)
     }
 
     private static func forecastInputSamples(
@@ -359,7 +392,13 @@ enum TokenUsageForecastAdapter {
     }
 }
 
-private struct ForecastInputSample: Sendable {
+struct TokenUsageForecastInput: Sendable {
+    let snapshot: UsageLimitSnapshot
+    let inputSamples: [ForecastInputSample]
+    let hasUsageIncreases: Bool
+}
+
+struct ForecastInputSample: Sendable {
     var date: Date
     var usedPercent: Double
     var limitId: String?

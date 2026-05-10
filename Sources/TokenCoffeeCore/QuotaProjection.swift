@@ -183,14 +183,13 @@ public enum QuotaProjectionEngine {
         let elapsedFraction = duration > 0 ? elapsed / duration : 0
         let ideal = elapsedFraction * 100
 
-        let currentWindowSamples = samples
-            .filter { sample in
-                sample.limitId == (snapshot.limitId ?? "codex")
-                    && sample.capturedAt >= startDate
-                    && sample.capturedAt <= now
-                    && sameReset(sample.weeklyResetsAt, resetDate)
-            }
-            .sorted { $0.capturedAt < $1.capturedAt }
+        let currentWindowSamples = currentWindowSamples(
+            snapshot: snapshot,
+            startDate: startDate,
+            resetDate: resetDate,
+            now: now,
+            samples: samples
+        )
 
         let projected = projectedUsage(
             current: current,
@@ -220,6 +219,24 @@ public enum QuotaProjectionEngine {
             weeklyWindowStartDate: startDate,
             paceState: state
         )
+    }
+
+    static func currentWindowSamples(
+        snapshot: RateLimitSnapshot,
+        startDate: Date,
+        resetDate: Date,
+        now: Date,
+        samples: [QuotaSample]
+    ) -> [QuotaSample] {
+        let limitId = snapshot.limitId ?? "codex"
+        return samples
+            .filter { sample in
+                sample.limitId == limitId
+                    && sample.capturedAt >= startDate
+                    && sample.capturedAt <= now
+                    && sameReset(sample.weeklyResetsAt, resetDate)
+            }
+            .sorted { $0.capturedAt < $1.capturedAt }
     }
 
     private static func projectedUsage(

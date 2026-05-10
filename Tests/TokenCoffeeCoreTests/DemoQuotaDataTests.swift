@@ -38,14 +38,14 @@ final class DemoQuotaDataTests: XCTestCase {
         )
         let forecast = try XCTUnwrap(projection.cycleRunForecast)
 
-        XCTAssertEqual(forecast.lowProjectedWeeklyUsedPercentAtReset, 96.034, accuracy: 0.001)
-        XCTAssertEqual(forecast.highProjectedWeeklyUsedPercentAtReset, 144.705, accuracy: 0.001)
+        XCTAssertEqual(forecast.lowProjectedWeeklyUsedPercentAtReset, 103.752, accuracy: 0.001)
+        XCTAssertEqual(forecast.highProjectedWeeklyUsedPercentAtReset, 147.377, accuracy: 0.001)
         XCTAssertGreaterThan(forecast.highProjectedWeeklyUsedPercentAtReset - forecast.lowProjectedWeeklyUsedPercentAtReset, 40)
         let firstHighSegment = try XCTUnwrap(forecast.highLineSegments.first)
         XCTAssertEqual(firstHighSegment.kind, .projectedIdle)
         XCTAssertEqual(firstHighSegment.startDate, scenario.now)
         XCTAssertGreaterThan(firstHighSegment.endUsedPercent, firstHighSegment.startUsedPercent)
-        XCTAssertTrue(forecast.highLineSegments.contains { $0.kind == .currentProjectedActivity })
+        XCTAssertTrue(forecast.highLineSegments.contains { $0.kind == .projectedActivity })
         XCTAssertEqual(forecast.lowLineSegments.first?.kind, .projectedIdle)
         XCTAssertFalse(forecast.observedIntensityRuns.isEmpty)
 

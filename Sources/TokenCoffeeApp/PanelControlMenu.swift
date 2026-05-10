@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 @MainActor
 enum PanelControlMenu {
@@ -34,6 +35,10 @@ enum PanelControlMenu {
 
         if modifierFlags.contains(.option) {
             menu.addItem(.separator())
+            menu.addItem(actionItem(title: "Export Forecast Diagnostics...") {
+                exportForecastDiagnostics(model: model)
+            })
+
             let demoItem = actionItem(title: "TOGGLE DEMO") {
                 model.toggleDemoMode()
             }
@@ -47,6 +52,42 @@ enum PanelControlMenu {
 
     private static func actionItem(title: String, handler: @escaping () -> Void) -> NSMenuItem {
         ActionMenuItem(title: title, handler: handler)
+    }
+
+    private static func exportForecastDiagnostics(model: AppModel) {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.nameFieldStringValue = "TokenCoffee-ForecastDiagnostics-\(filenameTimestamp()).json"
+
+        guard panel.runModal() == .OK,
+              let url = panel.url else {
+            return
+        }
+
+        do {
+            let data = try model.forecastDiagnosticsData()
+            try data.write(to: url, options: .atomic)
+        } catch {
+            showExportError(error)
+        }
+    }
+
+    private static func filenameTimestamp(date: Date = Date()) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter.string(from: date)
+    }
+
+    private static func showExportError(_ error: Error) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Could not export forecast diagnostics."
+        alert.informativeText = error.localizedDescription
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
 }

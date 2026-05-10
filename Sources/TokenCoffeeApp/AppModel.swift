@@ -342,6 +342,15 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func forecastDiagnosticsData() throws -> Data {
+        try QuotaForecastDiagnosticExporter.makeDiagnosticsData(
+            snapshot: quotaSnapshot,
+            samples: quotaSamples,
+            now: referenceDate,
+            syncStatusDescription: quotaSyncStatus.diagnosticDescription
+        )
+    }
+
     private nonisolated static func beginDeviceCodeLoginWithOneRestart(
         client: CodexRateLimitClient
     ) async throws -> CodexDeviceCodeLogin {
@@ -567,6 +576,23 @@ final class AppModel: ObservableObject {
         quotaSyncStatus = .localOnly
         activeCodexLogin = nil
         codexSignInState = .signedIn(scenario.account)
+    }
+}
+
+private extension QuotaSyncStatus {
+    var diagnosticDescription: String {
+        switch self {
+        case .localOnly:
+            "localOnly"
+        case .syncing:
+            "syncing"
+        case let .synced(date):
+            "synced \(date.formatted(.iso8601))"
+        case let .unavailable(message):
+            "unavailable: \(message)"
+        case let .failed(message):
+            "failed: \(message)"
+        }
     }
 }
 

@@ -30,7 +30,7 @@ settings:
 packages:
   TokenUsageForecast:
     url: https://github.com/pardeike/TokenUsageForecast.git
-    from: 1.0.0
+    from: 1.1.0
 targets:
   TokenCoffeeCore:
     type: framework

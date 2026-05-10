@@ -247,8 +247,9 @@ final class QuotaProjectionTests: XCTestCase {
 
         XCTAssertGreaterThan(forecast.lowProjectedWeeklyUsedPercentAtReset, 80)
         XCTAssertGreaterThan(forecast.highProjectedWeeklyUsedPercentAtReset, forecast.lowProjectedWeeklyUsedPercentAtReset)
-        XCTAssertLessThan(forecast.highProjectedWeeklyUsedPercentAtReset, 100)
-        XCTAssertEqual(projection.paceState, .fine)
+        XCTAssertGreaterThan(forecast.highProjectedWeeklyUsedPercentAtReset, 120)
+        XCTAssertLessThan(forecast.highProjectedWeeklyUsedPercentAtReset, 150)
+        XCTAssertEqual(projection.paceState, .slowDown)
         XCTAssertTrue(forecast.highLineSegments.contains { $0.kind == .projectedActivity })
         assertForecastLineSegmentsAreConnected(forecast.lowLineSegments)
         assertForecastLineSegmentsAreConnected(forecast.highLineSegments)
@@ -279,8 +280,9 @@ final class QuotaProjectionTests: XCTestCase {
 
         XCTAssertGreaterThan(forecast.lowProjectedWeeklyUsedPercentAtReset, 60)
         XCTAssertGreaterThan(forecast.highProjectedWeeklyUsedPercentAtReset, forecast.lowProjectedWeeklyUsedPercentAtReset)
-        XCTAssertLessThan(forecast.highProjectedWeeklyUsedPercentAtReset, 90)
-        XCTAssertEqual(projection.paceState, .fine)
+        XCTAssertGreaterThan(forecast.highProjectedWeeklyUsedPercentAtReset, 90)
+        XCTAssertLessThan(forecast.highProjectedWeeklyUsedPercentAtReset, 110)
+        XCTAssertEqual(projection.paceState, .watch)
         XCTAssertTrue(forecast.corridorPoints.allSatisfy { $0.lowerUsedPercent <= $0.upperUsedPercent })
     }
 
