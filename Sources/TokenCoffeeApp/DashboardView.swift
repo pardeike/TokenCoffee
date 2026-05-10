@@ -478,9 +478,19 @@ private struct QuotaGraphView: View {
                         xStart: .value("Start", band.startDate),
                         xEnd: .value("End", band.endDate),
                         yStart: .value("Low", 0),
-                        yEnd: .value("High", 105)
+                        yEnd: .value("High", graphCeiling)
                     )
                     .foregroundStyle(band.isHighlighted ? Color.primary.opacity(0.035) : Color.clear)
+                }
+
+                ForEach(intensityBands(startDate: startDate, resetDate: resetDate)) { band in
+                    RectangleMark(
+                        xStart: .value("Intensity Start", band.startDate),
+                        xEnd: .value("Intensity End", band.endDate),
+                        yStart: .value("Low", 0),
+                        yEnd: .value("High", graphCeiling)
+                    )
+                    .foregroundStyle(Color.orange.opacity(0.13))
                 }
 
                 ForEach(dayBoundaries(startDate: startDate, resetDate: resetDate)) { boundary in
@@ -532,7 +542,7 @@ private struct QuotaGraphView: View {
                     .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .butt))
             }
             .chartXScale(domain: startDate ... resetDate)
-            .chartYScale(domain: 0 ... 105)
+            .chartYScale(domain: 0 ... graphCeiling)
             .chartXAxis(.hidden)
             .chartYAxis {
                 AxisMarks(position: .leading, values: [0, 25, 50, 75, 100]) { value in
@@ -605,6 +615,21 @@ private struct QuotaGraphView: View {
         }
     }
 
+    private func intensityBands(startDate: Date, resetDate: Date) -> [IntensityBand] {
+        guard let forecast = projection.cycleRunForecast else {
+            return []
+        }
+
+        return forecast.observedIntensityRuns.enumerated().compactMap { index, run in
+            let bandStart = max(startDate, run.startDate)
+            let bandEnd = min(resetDate, run.endDate)
+            guard bandEnd.timeIntervalSince(bandStart) >= 60 else {
+                return nil
+            }
+            return IntensityBand(index: index, startDate: bandStart, endDate: bandEnd)
+        }
+    }
+
     private var actualPoints: [GraphPoint] {
         let stored = samples.map {
             GraphPoint(date: $0.capturedAt, percent: graphPercent($0.weeklyUsedPercent), series: "actual")
@@ -674,7 +699,16 @@ private struct QuotaGraphView: View {
         min(graphCeiling, max(0, value))
     }
 
-    private var graphCeiling: Double { 105 }
+    private var graphCeiling: Double {
+        let projectedHigh = projection.cycleRunForecast?.highProjectedWeeklyUsedPercentAtReset
+            ?? projection.projectedWeeklyUsedPercentAtReset
+            ?? projection.currentWeeklyUsedPercent
+        guard projectedHigh > 100 else {
+            return 105
+        }
+        let roundedHeadroom = ((projectedHigh - 100) / 10).rounded(.up) * 10
+        return min(130, max(105, 100 + roundedHeadroom / 2))
+    }
 }
 
 private struct DayBand: Identifiable {
@@ -689,6 +723,14 @@ private struct DayBand: Identifiable {
 private struct DayBoundary: Identifiable {
     let index: Int
     let date: Date
+
+    var id: Int { index }
+}
+
+private struct IntensityBand: Identifiable {
+    let index: Int
+    let startDate: Date
+    let endDate: Date
 
     var id: Int { index }
 }
@@ -743,21 +785,23 @@ private struct CycleForecastCorridorOverlay: View {
                 let overLimitHighLine = linePath(from: highSegments, visiblePercentRange: overLimitRange, in: size)
                 let fill = splitFillPaths(between: lowSegments, and: highSegments, in: size)
 
-                var safeLayerContext = context
-                safeLayerContext.opacity = corridorOpacity
-                safeLayerContext.drawLayer { layer in
-                    layer.fill(fill.safe, with: .color(.blue))
-                    layer.stroke(safeLowLine, with: .color(.blue), style: lineStyle)
-                    layer.stroke(safeHighLine, with: .color(.blue), style: lineStyle)
+                var safeFillContext = context
+                safeFillContext.opacity = corridorOpacity
+                safeFillContext.drawLayer { layer in
+                    layer.fill(fill.safe, with: .color(predictionFillColor))
                 }
 
-                var overLimitLayerContext = context
-                overLimitLayerContext.opacity = overLimitOpacity
-                overLimitLayerContext.drawLayer { layer in
+                context.stroke(safeLowLine, with: .color(predictionLowerLineColor), style: lineStyle)
+                context.stroke(safeHighLine, with: .color(predictionUpperLineColor), style: lineStyle)
+
+                var overLimitFillContext = context
+                overLimitFillContext.opacity = overLimitOpacity
+                overLimitFillContext.drawLayer { layer in
                     layer.fill(fill.overLimit, with: .color(.red))
-                    layer.stroke(overLimitLowLine, with: .color(.red), style: lineStyle)
-                    layer.stroke(overLimitHighLine, with: .color(.red), style: lineStyle)
                 }
+
+                context.stroke(overLimitLowLine, with: .color(.red), style: lineStyle)
+                context.stroke(overLimitHighLine, with: .color(.red), style: lineStyle)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
@@ -1081,6 +1125,18 @@ private struct CycleForecastCorridorOverlay: View {
 
     private var lineStyle: StrokeStyle {
         StrokeStyle(lineWidth: forecastLineWidth, lineCap: .round, lineJoin: .round)
+    }
+
+    private var predictionFillColor: Color {
+        Color(red: 0.12, green: 0.56, blue: 0.94)
+    }
+
+    private var predictionLowerLineColor: Color {
+        Color(red: 0.063, green: 0.725, blue: 0.506)
+    }
+
+    private var predictionUpperLineColor: Color {
+        Color(red: 0.961, green: 0.620, blue: 0.043)
     }
 
     private let corridorOpacity = 0.24

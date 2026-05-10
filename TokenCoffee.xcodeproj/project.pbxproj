@@ -34,12 +34,14 @@
 		B72C4AEF9F38890D67173855 /* TokenCoffeeCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EA274434F4C69B881FDBF2F8 /* TokenCoffeeCore.framework */; };
 		B7EBCA8A160AF96CA49BD4A3 /* CloudKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4BF37D1C9A2022A96BDB852C /* CloudKit.framework */; };
 		B7FCF9112D2FF1984F036205 /* StatusPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAE6FFD288FA2AD75A829908 /* StatusPanelController.swift */; };
+		BB992F6518611C7A1AEDF913 /* TokenUsageForecast in Frameworks */ = {isa = PBXBuildFile; productRef = A1BA4604D4B15AA442717AA5 /* TokenUsageForecast */; };
 		BE689677F534ED08053E9BEF /* CodexNativeClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA58038499D13F07C5C9FE8F /* CodexNativeClientTests.swift */; };
 		C1BEB0ED90F1D712DE1A9839 /* QuotaSyncStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC1C73A26484DD327BF9F874 /* QuotaSyncStatus.swift */; };
 		D15DFE26B4CD2005A6362E9F /* TokenCoffeeCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = EA274434F4C69B881FDBF2F8 /* TokenCoffeeCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		D53681C9605FE03BBF6105A2 /* TokenCoffeeCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EA274434F4C69B881FDBF2F8 /* TokenCoffeeCore.framework */; };
 		D95162623E0901260BA235F6 /* CodexNativeUsageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9379B3F3A2D1BCF2F4898B7 /* CodexNativeUsageService.swift */; };
 		DC9F2F59FB48E23513A03E3C /* CodexNativeSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5645DB2AF14015C9B891D4FD /* CodexNativeSupport.swift */; };
+		E1B9FD43F757E8A569069340 /* TokenUsageForecastAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86AF9756E6C0F3215C765216 /* TokenUsageForecastAdapter.swift */; };
 		E80AC25F5C32E65DEAE0E6F5 /* QuotaSampleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9BD5D8879BE323DD853C8A3 /* QuotaSampleStore.swift */; };
 		E8B65880477127AA57C600D0 /* PanelControlMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F723B70B68EC1ABF330D3EB /* PanelControlMenu.swift */; };
 		EC01D5842E2837D1C4352CB7 /* CodexNativeAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB555D4794B9843BAFE1F925 /* CodexNativeAuthService.swift */; };
@@ -112,6 +114,7 @@
 		7177466CEF89C89EC8B61148 /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = System/Library/Frameworks/IOKit.framework; sourceTree = SDKROOT; };
 		78DC4B26FEA8A020F3BB30F9 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		862401FDB58B5CDC84ECB28E /* Charts.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Charts.framework; path = System/Library/Frameworks/Charts.framework; sourceTree = SDKROOT; };
+		86AF9756E6C0F3215C765216 /* TokenUsageForecastAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenUsageForecastAdapter.swift; sourceTree = "<group>"; };
 		8B979C5E6EF8FA47C090C81A /* QuotaProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaProjection.swift; sourceTree = "<group>"; };
 		8DD2CB6475B3CDD7A446F041 /* QuotaProjectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaProjectionTests.swift; sourceTree = "<group>"; };
 		91866704F00A6C51FF289D6A /* TokenCoffeeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenCoffeeApp.swift; sourceTree = "<group>"; };
@@ -161,6 +164,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BB992F6518611C7A1AEDF913 /* TokenUsageForecast in Frameworks */,
 				AE77846898F64E86C94300CB /* IOKit.framework in Frameworks */,
 				80763E665FF71E3CF4A1EAA3 /* Security.framework in Frameworks */,
 			);
@@ -262,6 +266,7 @@
 				DE7AD1A297019BC7C543926B /* PowerSessionController.swift */,
 				8B979C5E6EF8FA47C090C81A /* QuotaProjection.swift */,
 				B9BD5D8879BE323DD853C8A3 /* QuotaSampleStore.swift */,
+				86AF9756E6C0F3215C765216 /* TokenUsageForecastAdapter.swift */,
 			);
 			name = TokenCoffeeCore;
 			path = Sources/TokenCoffeeCore;
@@ -304,6 +309,7 @@
 			);
 			name = TokenCoffeeCore;
 			packageProductDependencies = (
+				A1BA4604D4B15AA442717AA5 /* TokenUsageForecast */,
 			);
 			productName = TokenCoffeeCore;
 			productReference = EA274434F4C69B881FDBF2F8 /* TokenCoffeeCore.framework */;
@@ -354,6 +360,9 @@
 			);
 			mainGroup = 4D57F157BCFB3E65450CC7B0;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				DEB9D43A66A8A12337A17E48 /* XCRemoteSwiftPackageReference "TokenUsageForecast" */,
+			);
 			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
@@ -410,6 +419,7 @@
 				79E2C201F1E8A12C21E9CA77 /* PowerSessionController.swift in Sources */,
 				2CC861C421981151667D0BA0 /* QuotaProjection.swift in Sources */,
 				E80AC25F5C32E65DEAE0E6F5 /* QuotaSampleStore.swift in Sources */,
+				E1B9FD43F757E8A569069340 /* TokenUsageForecastAdapter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -776,6 +786,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		DEB9D43A66A8A12337A17E48 /* XCRemoteSwiftPackageReference "TokenUsageForecast" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pardeike/TokenUsageForecast.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A1BA4604D4B15AA442717AA5 /* TokenUsageForecast */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DEB9D43A66A8A12337A17E48 /* XCRemoteSwiftPackageReference "TokenUsageForecast" */;
+			productName = TokenUsageForecast;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 5BB69922B177AFE4CEFB515E /* Project object */;
 }

@@ -1,0 +1,15 @@
+{
+  "originHash" : "16bf2b3897214b986ec2974eb7325930433e0d7a32bf08559754fa5cc38f2e0a",
+  "pins" : [
+    {
+      "identity" : "tokenusageforecast",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/pardeike/TokenUsageForecast.git",
+      "state" : {
+        "revision" : "44668f2dbcbe127eb14ee858a12e9cb8609e4eb6",
+        "version" : "1.0.0"
+      }
+    }
+  ],
+  "version" : 3
+}

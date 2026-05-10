@@ -25,9 +25,11 @@ public struct DemoQuotaData: Decodable, Equatable, Sendable {
     public let planType: String?
     public let weeklyWindowMinutes: Int
     public let elapsedWindowMinutes: Int
+    public let elapsedWindowSeconds: Int?
     public let weeklyUsedPercent: Double
     public let fiveHourUsedPercent: Double
     public let fiveHourResetOffsetMinutes: Int
+    public let fiveHourResetOffsetSeconds: Int?
     public let samples: [DemoQuotaSamplePoint]
 
     public init(
@@ -36,9 +38,11 @@ public struct DemoQuotaData: Decodable, Equatable, Sendable {
         planType: String?,
         weeklyWindowMinutes: Int,
         elapsedWindowMinutes: Int,
+        elapsedWindowSeconds: Int? = nil,
         weeklyUsedPercent: Double,
         fiveHourUsedPercent: Double,
         fiveHourResetOffsetMinutes: Int,
+        fiveHourResetOffsetSeconds: Int? = nil,
         samples: [DemoQuotaSamplePoint]
     ) {
         self.limitId = limitId
@@ -46,18 +50,24 @@ public struct DemoQuotaData: Decodable, Equatable, Sendable {
         self.planType = planType
         self.weeklyWindowMinutes = weeklyWindowMinutes
         self.elapsedWindowMinutes = elapsedWindowMinutes
+        self.elapsedWindowSeconds = elapsedWindowSeconds
         self.weeklyUsedPercent = weeklyUsedPercent
         self.fiveHourUsedPercent = fiveHourUsedPercent
         self.fiveHourResetOffsetMinutes = fiveHourResetOffsetMinutes
+        self.fiveHourResetOffsetSeconds = fiveHourResetOffsetSeconds
         self.samples = samples
     }
 
     public func makeScenario(
         referenceDate: Date = Self.referenceDate()
     ) throws -> DemoQuotaScenario {
+        let weeklyWindowSeconds = weeklyWindowMinutes * 60
+        let observedWindowSeconds = elapsedWindowSeconds ?? elapsedWindowMinutes * 60
+        let fiveHourResetOffsetSeconds = fiveHourResetOffsetSeconds ?? fiveHourResetOffsetMinutes * 60
+
         guard weeklyWindowMinutes > 0,
-              elapsedWindowMinutes > 0,
-              elapsedWindowMinutes < weeklyWindowMinutes else {
+              observedWindowSeconds > 0,
+              observedWindowSeconds < weeklyWindowSeconds else {
             throw DemoQuotaDataError.invalidWindow
         }
         guard samples.isEmpty == false else {
@@ -65,26 +75,27 @@ public struct DemoQuotaData: Decodable, Equatable, Sendable {
         }
 
         let now = referenceDate
-        let windowStart = now.addingTimeInterval(-TimeInterval(elapsedWindowMinutes * 60))
-        let weeklyReset = windowStart.addingTimeInterval(TimeInterval(weeklyWindowMinutes * 60))
-        let fiveHourReset = now.addingTimeInterval(TimeInterval(fiveHourResetOffsetMinutes * 60))
+        let windowStart = now.addingTimeInterval(-TimeInterval(observedWindowSeconds))
+        let weeklyReset = windowStart.addingTimeInterval(TimeInterval(weeklyWindowSeconds))
+        let fiveHourReset = now.addingTimeInterval(TimeInterval(fiveHourResetOffsetSeconds))
         let weeklyResetTimestamp = Int(weeklyReset.timeIntervalSince1970.rounded())
         let fiveHourResetTimestamp = Int(fiveHourReset.timeIntervalSince1970.rounded())
 
-        var previousOffset: Int?
+        var previousOffsetSeconds: Int?
         var quotaSamples: [QuotaSample] = []
         for point in samples {
-            guard point.offsetMinutes >= 0,
-                  point.offsetMinutes <= elapsedWindowMinutes else {
+            let pointOffsetSeconds = point.timeOffsetSeconds
+            guard pointOffsetSeconds >= 0,
+                  pointOffsetSeconds <= observedWindowSeconds else {
                 throw DemoQuotaDataError.sampleOutsideObservedWindow(offsetMinutes: point.offsetMinutes)
             }
-            if let previousOffset,
-               point.offsetMinutes <= previousOffset {
+            if let previousOffsetSeconds,
+               pointOffsetSeconds <= previousOffsetSeconds {
                 throw DemoQuotaDataError.samplesNotIncreasing
             }
-            previousOffset = point.offsetMinutes
+            previousOffsetSeconds = pointOffsetSeconds
             quotaSamples.append(makeSample(
-                at: windowStart.addingTimeInterval(TimeInterval(point.offsetMinutes * 60)),
+                at: windowStart.addingTimeInterval(TimeInterval(pointOffsetSeconds)),
                 weeklyUsedPercent: point.weeklyUsedPercent,
                 weeklyReset: weeklyReset,
                 fiveHourReset: fiveHourReset
@@ -92,7 +103,7 @@ public struct DemoQuotaData: Decodable, Equatable, Sendable {
         }
 
         if let last = samples.last,
-           last.offsetMinutes == elapsedWindowMinutes {
+           last.timeOffsetSeconds == observedWindowSeconds {
             guard abs(last.weeklyUsedPercent - weeklyUsedPercent) < 0.001 else {
                 throw DemoQuotaDataError.finalSampleMismatch
             }
@@ -169,11 +180,17 @@ public struct DemoQuotaData: Decodable, Equatable, Sendable {
 
 public struct DemoQuotaSamplePoint: Decodable, Equatable, Sendable {
     public let offsetMinutes: Int
+    public let offsetSeconds: Int?
     public let weeklyUsedPercent: Double
 
-    public init(offsetMinutes: Int, weeklyUsedPercent: Double) {
+    public init(offsetMinutes: Int, offsetSeconds: Int? = nil, weeklyUsedPercent: Double) {
         self.offsetMinutes = offsetMinutes
+        self.offsetSeconds = offsetSeconds
         self.weeklyUsedPercent = weeklyUsedPercent
+    }
+
+    var timeOffsetSeconds: Int {
+        offsetSeconds ?? offsetMinutes * 60
     }
 }
 
