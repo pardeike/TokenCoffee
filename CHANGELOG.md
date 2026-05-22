@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+- Reworked quota sample iCloud sync to use incremental CloudKit zone changes instead of full-table queries.
+- Added CloudKit rate-limit backoff and a `sync paused` status so throttling is no longer reported as a generic sync failure.
+- Added bounded remote cleanup for `QuotaSample` records older than the current weekly graph window, including a throttled bridge for records written by earlier builds.
+
 ## 0.1
 
 - Added macOS menu bar app with compact power controls.

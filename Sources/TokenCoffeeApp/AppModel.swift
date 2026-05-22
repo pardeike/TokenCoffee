@@ -17,6 +17,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var powerErrorMessage: String?
     @Published private(set) var quotaSnapshot: RateLimitSnapshot?
     @Published private(set) var quotaSamples: [QuotaSample] = []
+    @Published private(set) var projection = QuotaProjectionEngine.make(snapshot: nil, samples: [])
+    @Published private(set) var graphSamples: [QuotaSample] = []
     @Published private(set) var lastQuotaRefresh: Date?
     @Published private(set) var lastQuotaErrorDate: Date?
     @Published private(set) var lastQuotaErrorMessage: String?
@@ -59,10 +61,6 @@ final class AppModel: ObservableObject {
         self.powerMode = self.startsInDemoMode ? .keepAwakeDisplay : TokenCoffeeDefaults.preferredPowerMode()
     }
 
-    var projection: QuotaProjection {
-        QuotaProjectionEngine.make(snapshot: quotaSnapshot, samples: quotaSamples, now: referenceDate)
-    }
-
     var referenceDate: Date {
         if isDemoModeEnabled,
            let bundledDemoScenario {
@@ -90,22 +88,6 @@ final class AppModel: ObservableObject {
         !codexSignInState.isLoginFlowActive
     }
 
-    var graphSamples: [QuotaSample] {
-        guard let snapshot = quotaSnapshot,
-              let weekly = snapshot.secondary,
-              let resetDate = weekly.resetDate,
-              let durationMinutes = weekly.windowDurationMins else {
-            return []
-        }
-
-        let startDate = resetDate.addingTimeInterval(-TimeInterval(durationMinutes * 60))
-        let limitId = snapshot.limitId ?? "codex"
-        let now = referenceDate
-        return quotaSamples
-            .filter { $0.limitId == limitId && $0.capturedAt >= startDate && $0.capturedAt <= now }
-            .sorted { $0.capturedAt < $1.capturedAt }
-    }
-
     func start() {
         TokenCoffeeDefaults.setClosedDisplayModeEnabled(false)
         if isDemoModeEnabled,
@@ -128,6 +110,7 @@ final class AppModel: ObservableObject {
         }
         startQuotaClientEvents()
         quotaSamples = (try? sampleStore.load()) ?? []
+        updateDerivedQuotaDisplay()
         refreshQuota()
         scheduleRefreshTimer()
     }
@@ -144,7 +127,7 @@ final class AppModel: ObservableObject {
     }
 
     func setPanelVisible(_ visible: Bool) {
-        if visible, !isDemoModeEnabled {
+        if visible, !isDemoModeEnabled, shouldRefreshQuotaOnPanelOpen(now: Date()) {
             refreshQuota()
         }
     }
@@ -193,6 +176,8 @@ final class AppModel: ObservableObject {
             case let .success(fetchResult):
                 self.quotaSnapshot = fetchResult.snapshot
                 self.quotaSamples = fetchResult.samples
+                self.projection = fetchResult.derivedDisplay.projection
+                self.graphSamples = fetchResult.derivedDisplay.graphSamples
                 self.lastQuotaRefresh = fetchResult.capturedAt
                 self.lastQuotaErrorDate = nil
                 self.lastQuotaErrorMessage = nil
@@ -391,11 +376,17 @@ final class AppModel: ObservableObject {
                 samples = (try? store.merge([sample])) ?? QuotaSampleStore.mergedSamples(samples + [sample])
             }
 
-            let syncOutcome = await syncService.sync(localSamples: samples)
+            let syncOutcome = await syncService.sync(localSamples: samples, currentSnapshot: snapshot)
             let persistedSamples = (try? store.merge(syncOutcome.samples)) ?? syncOutcome.samples
+            let derivedDisplay = makeDerivedQuotaDisplay(
+                snapshot: snapshot,
+                samples: persistedSamples,
+                now: capturedAt
+            )
             return .success(QuotaFetchResult(
                 snapshot: snapshot,
                 samples: persistedSamples,
+                derivedDisplay: derivedDisplay,
                 capturedAt: capturedAt,
                 account: fetchResult.account,
                 syncStatus: syncOutcome.status
@@ -440,6 +431,56 @@ final class AppModel: ObservableObject {
             }
         }
         refreshTimer?.tolerance = min(30, interval / 4)
+    }
+
+    private func shouldRefreshQuotaOnPanelOpen(now: Date) -> Bool {
+        guard !isRefreshingQuota else {
+            return false
+        }
+        guard let lastQuotaRefresh else {
+            return true
+        }
+        return now.timeIntervalSince(lastQuotaRefresh) >= Self.panelOpenRefreshMinimumAge
+    }
+
+    private func updateDerivedQuotaDisplay(now: Date? = nil) {
+        let derivedDisplay = Self.makeDerivedQuotaDisplay(
+            snapshot: quotaSnapshot,
+            samples: quotaSamples,
+            now: now ?? referenceDate
+        )
+        projection = derivedDisplay.projection
+        graphSamples = derivedDisplay.graphSamples
+    }
+
+    private nonisolated static func makeDerivedQuotaDisplay(
+        snapshot: RateLimitSnapshot?,
+        samples: [QuotaSample],
+        now: Date
+    ) -> QuotaDerivedDisplay {
+        QuotaDerivedDisplay(
+            projection: QuotaProjectionEngine.make(snapshot: snapshot, samples: samples, now: now),
+            graphSamples: displayGraphSamples(snapshot: snapshot, samples: samples, now: now)
+        )
+    }
+
+    private nonisolated static func displayGraphSamples(
+        snapshot: RateLimitSnapshot?,
+        samples: [QuotaSample],
+        now: Date
+    ) -> [QuotaSample] {
+        guard let snapshot,
+              let weekly = snapshot.secondary,
+              let resetDate = weekly.resetDate else {
+            return []
+        }
+
+        let startDate = QuotaHistoryWindow.startDate(resetDate: resetDate)
+        let limitId = snapshot.limitId ?? "codex"
+        let displaySamples = samples
+            .filter { $0.limitId == limitId && $0.capturedAt >= startDate && $0.capturedAt <= now }
+            .sorted { $0.capturedAt < $1.capturedAt }
+        return QuotaGraphDisplaySampler.displaySamples(from: displaySamples)
     }
 
     private func startQuotaClientEvents() {
@@ -501,6 +542,7 @@ final class AppModel: ObservableObject {
 
         case let .rateLimitsChanged(response):
             quotaSnapshot = response.codexSnapshot
+            updateDerivedQuotaDisplay()
 
         case let .diagnostic(message):
             if lastQuotaErrorDate != nil || quotaSnapshot == nil {
@@ -514,6 +556,8 @@ final class AppModel: ObservableObject {
             powerErrorMessage: powerErrorMessage,
             quotaSnapshot: quotaSnapshot,
             quotaSamples: quotaSamples,
+            projection: projection,
+            graphSamples: graphSamples,
             lastQuotaRefresh: lastQuotaRefresh,
             lastQuotaErrorDate: lastQuotaErrorDate,
             lastQuotaErrorMessage: lastQuotaErrorMessage,
@@ -536,6 +580,8 @@ final class AppModel: ObservableObject {
             quotaSnapshot = liveStateBeforeDemoMode.quotaSnapshot
             powerErrorMessage = liveStateBeforeDemoMode.powerErrorMessage
             quotaSamples = liveStateBeforeDemoMode.quotaSamples
+            projection = liveStateBeforeDemoMode.projection
+            graphSamples = liveStateBeforeDemoMode.graphSamples
             lastQuotaRefresh = liveStateBeforeDemoMode.lastQuotaRefresh
             lastQuotaErrorDate = liveStateBeforeDemoMode.lastQuotaErrorDate
             lastQuotaErrorMessage = liveStateBeforeDemoMode.lastQuotaErrorMessage
@@ -547,6 +593,7 @@ final class AppModel: ObservableObject {
         } else {
             quotaSnapshot = nil
             quotaSamples = (try? sampleStore.load()) ?? []
+            updateDerivedQuotaDisplay()
             lastQuotaRefresh = nil
             lastQuotaErrorDate = nil
             lastQuotaErrorMessage = nil
@@ -569,6 +616,7 @@ final class AppModel: ObservableObject {
         }
         quotaSnapshot = scenario.snapshot
         quotaSamples = scenario.samples
+        updateDerivedQuotaDisplay(now: scenario.now)
         lastQuotaRefresh = scenario.now
         lastQuotaErrorDate = nil
         lastQuotaErrorMessage = nil
@@ -577,6 +625,8 @@ final class AppModel: ObservableObject {
         activeCodexLogin = nil
         codexSignInState = .signedIn(scenario.account)
     }
+
+    private static let panelOpenRefreshMinimumAge: TimeInterval = 30
 }
 
 private extension QuotaSyncStatus {
@@ -588,6 +638,12 @@ private extension QuotaSyncStatus {
             "syncing"
         case let .synced(date):
             "synced \(date.formatted(.iso8601))"
+        case let .rateLimited(date):
+            if let date {
+                "rateLimited until \(date.formatted(.iso8601))"
+            } else {
+                "rateLimited"
+            }
         case let .unavailable(message):
             "unavailable: \(message)"
         case let .failed(message):
@@ -600,6 +656,8 @@ private struct AppModelLiveState {
     let powerErrorMessage: String?
     let quotaSnapshot: RateLimitSnapshot?
     let quotaSamples: [QuotaSample]
+    let projection: QuotaProjection
+    let graphSamples: [QuotaSample]
     let lastQuotaRefresh: Date?
     let lastQuotaErrorDate: Date?
     let lastQuotaErrorMessage: String?
@@ -611,9 +669,56 @@ private struct AppModelLiveState {
 private struct QuotaFetchResult: Sendable {
     let snapshot: RateLimitSnapshot
     let samples: [QuotaSample]
+    let derivedDisplay: QuotaDerivedDisplay
     let capturedAt: Date
     let account: CodexAccountSnapshot?
     let syncStatus: QuotaSyncStatus
+}
+
+private struct QuotaDerivedDisplay: Sendable {
+    let projection: QuotaProjection
+    let graphSamples: [QuotaSample]
+}
+
+enum QuotaGraphDisplaySampler {
+    static let maximumPointCount = 480
+
+    static func displaySamples(
+        from samples: [QuotaSample],
+        maximumPointCount: Int = maximumPointCount
+    ) -> [QuotaSample] {
+        guard samples.count > maximumPointCount else {
+            return samples
+        }
+        guard maximumPointCount > 1 else {
+            return samples.last.map { [$0] } ?? []
+        }
+
+        let lastIndex = samples.count - 1
+        let step = Double(lastIndex) / Double(maximumPointCount - 1)
+        var sampled: [QuotaSample] = []
+        sampled.reserveCapacity(maximumPointCount)
+
+        var previousIndex = -1
+        for outputIndex in 0..<maximumPointCount {
+            let sourceIndex = min(lastIndex, Int((Double(outputIndex) * step).rounded()))
+            guard sourceIndex != previousIndex else {
+                continue
+            }
+            sampled.append(samples[sourceIndex])
+            previousIndex = sourceIndex
+        }
+
+        if sampled.last != samples[lastIndex] {
+            if sampled.count >= maximumPointCount {
+                sampled[sampled.count - 1] = samples[lastIndex]
+            } else {
+                sampled.append(samples[lastIndex])
+            }
+        }
+
+        return sampled
+    }
 }
 
 private extension CodexSignInState {

@@ -51,9 +51,9 @@ Click the cup icon in the menu bar.
 
 When either awake mode is active, closing the lid should not put the Mac to sleep.
 
-The graph always shows the full 7-day weekly window. Yellow is the current forecast, red is the over-limit portion, and the red vertical bar is the renew deadline.
+The graph x-axis always shows the full seven days before the renewal deadline. Alternating background bands follow local calendar day boundaries. Yellow is the current forecast, red is the over-limit portion, and the red vertical bar is the renew deadline.
 
-The footer shows whether quota history is local-only, syncing, synced through iCloud, or temporarily unavailable.
+The footer shows whether quota history is local-only, syncing, synced through iCloud, paused by CloudKit rate limiting, or temporarily unavailable.
 
 ## Build
 
@@ -93,6 +93,8 @@ By default the release package is built unsigned and then ad-hoc signed, which k
 TOKENCOFFEE_DEVELOPMENT_TEAM=TEAMID Scripts/package-release.sh
 ```
 
+`CURRENT_PROJECT_VERSION` intentionally stays at `0` in the checked-in project. App Store builds are produced by Xcode Cloud, which assigns and bumps the build number during the cloud archive flow.
+
 ## Runtime Files
 
 Token Coffee stores quota samples in:
@@ -101,9 +103,9 @@ Token Coffee stores quota samples in:
 ~/Library/Application Support/TokenCoffee/quota-samples.jsonl
 ```
 
-CloudKit-capable builds merge this file with private iCloud records of type `QuotaSample`.
+CloudKit-capable builds incrementally merge this file with private iCloud records of type `QuotaSample` in a per-user custom zone named `QuotaSamples`. Builds upgraded from earlier versions also scan the legacy default-zone `QuotaSample` records in small batches so existing synced history remains visible while stale legacy records are culled.
 
-Raw quota samples are retained for 14 days, with a hard cap of 25,000 samples after dedupe. CloudKit-capable builds apply the same retention policy remotely and delete stale `QuotaSample` records during sync.
+Raw quota samples are retained for 14 days, with a hard cap of 25,000 samples after dedupe. CloudKit-capable builds delete remote `QuotaSample` records only after incremental sync has caught up, and only when the samples are older than the seven-day graph window.
 
 Closed-lid wake support installs this LaunchAgent fail-safe:
 

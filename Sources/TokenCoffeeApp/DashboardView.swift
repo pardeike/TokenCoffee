@@ -369,6 +369,12 @@ struct DashboardView: View {
                 .secondary,
                 "Quota samples synced with iCloud"
             )
+        case let .rateLimited(date):
+            if let date {
+                ("sync paused", "clock", .orange, "CloudKit rate limited; retrying at \(DateFormatter.panelTime.string(from: date))")
+            } else {
+                ("sync paused", "clock", .orange, "CloudKit rate limited; retrying later")
+            }
         case let .unavailable(message):
             ("iCloud off", "icloud.slash", .orange, message)
         case let .failed(message):
@@ -471,9 +477,9 @@ private struct QuotaGraphView: View {
 
     var body: some View {
         if let resetDate = projection.weeklyResetDate {
-            let startDate = graphStartDate(resetDate: resetDate)
+            let startDate = QuotaHistoryWindow.startDate(resetDate: resetDate)
             Chart {
-                ForEach(dayBands(startDate: startDate, resetDate: resetDate)) { band in
+                ForEach(QuotaGraphTimeAxis.dayBands(startDate: startDate, resetDate: resetDate)) { band in
                     RectangleMark(
                         xStart: .value("Start", band.startDate),
                         xEnd: .value("End", band.endDate),
@@ -493,7 +499,7 @@ private struct QuotaGraphView: View {
                     .foregroundStyle(Color.orange.opacity(0.13))
                 }
 
-                ForEach(dayBoundaries(startDate: startDate, resetDate: resetDate)) { boundary in
+                ForEach(QuotaGraphTimeAxis.dayBoundaries(startDate: startDate, resetDate: resetDate)) { boundary in
                     RuleMark(x: .value("Day", boundary.date))
                         .foregroundStyle(.secondary.opacity(0.16))
                         .lineStyle(StrokeStyle(lineWidth: 0.5))
@@ -582,36 +588,6 @@ private struct QuotaGraphView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-        }
-    }
-
-    private func graphStartDate(resetDate: Date) -> Date {
-        resetDate.addingTimeInterval(-7 * 24 * 60 * 60)
-    }
-
-    private func dayBands(startDate: Date, resetDate: Date) -> [DayBand] {
-        let segmentDuration = resetDate.timeIntervalSince(startDate) / 7
-        return (0..<7).map { index in
-            let segmentStart = startDate.addingTimeInterval(TimeInterval(index) * segmentDuration)
-            let segmentEnd = index == 6
-                ? resetDate
-                : startDate.addingTimeInterval(TimeInterval(index + 1) * segmentDuration)
-            return DayBand(
-                index: index,
-                startDate: segmentStart,
-                endDate: segmentEnd,
-                isHighlighted: index.isMultiple(of: 2)
-            )
-        }
-    }
-
-    private func dayBoundaries(startDate: Date, resetDate: Date) -> [DayBoundary] {
-        let segmentDuration = resetDate.timeIntervalSince(startDate) / 7
-        return (1..<7).map { index in
-            DayBoundary(
-                index: index,
-                date: startDate.addingTimeInterval(TimeInterval(index) * segmentDuration)
-            )
         }
     }
 
@@ -711,7 +687,74 @@ private struct QuotaGraphView: View {
     }
 }
 
-private struct DayBand: Identifiable {
+enum QuotaGraphTimeAxis {
+    static func dayBands(
+        startDate: Date,
+        resetDate: Date,
+        calendar: Calendar = .current
+    ) -> [QuotaGraphDayBand] {
+        guard startDate < resetDate else {
+            return []
+        }
+
+        var bands: [QuotaGraphDayBand] = []
+        var bandStart = startDate
+        var index = 0
+
+        while bandStart < resetDate {
+            let bandEnd = min(nextDayBoundary(after: bandStart, calendar: calendar), resetDate)
+            let dayOrdinal = calendar.ordinality(of: .day, in: .era, for: bandStart) ?? index
+            bands.append(
+                QuotaGraphDayBand(
+                    index: index,
+                    startDate: bandStart,
+                    endDate: bandEnd,
+                    isHighlighted: dayOrdinal.isMultiple(of: 2)
+                )
+            )
+
+            guard bandEnd < resetDate else {
+                break
+            }
+            bandStart = bandEnd
+            index += 1
+        }
+
+        return bands
+    }
+
+    static func dayBoundaries(
+        startDate: Date,
+        resetDate: Date,
+        calendar: Calendar = .current
+    ) -> [QuotaGraphDayBoundary] {
+        guard startDate < resetDate else {
+            return []
+        }
+
+        var boundaries: [QuotaGraphDayBoundary] = []
+        var boundary = nextDayBoundary(after: startDate, calendar: calendar)
+        var index = 0
+
+        while boundary < resetDate {
+            boundaries.append(QuotaGraphDayBoundary(index: index, date: boundary))
+            guard let nextBoundary = calendar.date(byAdding: .day, value: 1, to: boundary) else {
+                break
+            }
+            boundary = nextBoundary
+            index += 1
+        }
+
+        return boundaries
+    }
+
+    private static func nextDayBoundary(after date: Date, calendar: Calendar) -> Date {
+        let dayStart = calendar.startOfDay(for: date)
+        return calendar.date(byAdding: .day, value: 1, to: dayStart) ?? date
+    }
+}
+
+struct QuotaGraphDayBand: Equatable, Identifiable {
     let index: Int
     let startDate: Date
     let endDate: Date
@@ -720,7 +763,7 @@ private struct DayBand: Identifiable {
     var id: Int { index }
 }
 
-private struct DayBoundary: Identifiable {
+struct QuotaGraphDayBoundary: Equatable, Identifiable {
     let index: Int
     let date: Date
 

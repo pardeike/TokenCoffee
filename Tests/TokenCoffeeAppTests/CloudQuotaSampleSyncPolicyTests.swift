@@ -1,0 +1,384 @@
+import CloudKit
+import XCTest
+@testable import Token_Coffee
+@testable import TokenCoffeeCore
+
+final class CloudQuotaSampleSyncPolicyTests: XCTestCase {
+    func testInitialUploadWatermarkStartsAtNewestLocalSample() {
+        let older = sample(capturedAt: 100)
+        let newer = sample(capturedAt: 300)
+
+        let watermark = CloudQuotaSampleSyncPolicy.initialUploadWatermark(
+            existing: nil,
+            localSamples: [newer, older]
+        )
+
+        XCTAssertEqual(watermark, newer.capturedAt)
+    }
+
+    func testSamplesToUploadOnlyUsesNewerSamplesMissingRemotely() {
+        let watermark = Date(timeIntervalSince1970: 200)
+        let old = sample(capturedAt: 100)
+        let remote = sample(capturedAt: 250)
+        let upload = sample(capturedAt: 300)
+
+        let samples = CloudQuotaSampleSyncPolicy.samplesToUpload(
+            localSamples: [old, remote, upload],
+            remoteRecordNames: [remote.syncRecordName],
+            uploadWatermark: watermark
+        )
+
+        XCTAssertEqual(samples, [upload])
+    }
+
+    func testCleanupUsesCurrentTimeAxisLeftEdgeOnly() {
+        let windowStart = Date(timeIntervalSince1970: 1_000)
+        let tooOld = sample(capturedAt: 999, limitId: "other", resetAt: 100)
+        let exactlyAtStart = sample(capturedAt: 1_000, limitId: "other", resetAt: 100)
+        let inWindowWithDifferentReset = sample(capturedAt: 1_001, limitId: "other", resetAt: 100)
+        let remoteSamples = remoteMetadata([tooOld, exactlyAtStart, inWindowWithDifferentReset])
+
+        let recordNames = CloudQuotaSampleSyncPolicy.cleanupCandidateRecordNames(
+            remoteSamplesByRecordName: remoteSamples,
+            context: CloudQuotaSampleCleanupContext(windowStartDate: windowStart),
+            limit: 10
+        )
+
+        XCTAssertEqual(recordNames, [tooOld.syncRecordName])
+    }
+
+    func testCleanupHonorsBatchLimitAndOldestFirst() {
+        let windowStart = Date(timeIntervalSince1970: 1_000)
+        let newestOld = sample(capturedAt: 900)
+        let oldest = sample(capturedAt: 700)
+        let middle = sample(capturedAt: 800)
+        let remoteSamples = remoteMetadata([newestOld, oldest, middle])
+
+        let recordNames = CloudQuotaSampleSyncPolicy.cleanupCandidateRecordNames(
+            remoteSamplesByRecordName: remoteSamples,
+            context: CloudQuotaSampleCleanupContext(windowStartDate: windowStart),
+            limit: 2
+        )
+
+        XCTAssertEqual(recordNames, [oldest.syncRecordName, middle.syncRecordName])
+    }
+
+    func testCleanupContextUsesGraphWindowStart() throws {
+        let reset = Date(timeIntervalSince1970: 10_000)
+        let expectedWindowStart = QuotaHistoryWindow.startDate(resetDate: reset)
+        let snapshot = snapshot(reset: reset, windowMinutes: 14 * 24 * 60)
+
+        let context = try XCTUnwrap(
+            CloudQuotaSampleCleanupContext(
+                snapshot: snapshot,
+                now: expectedWindowStart.addingTimeInterval(60)
+            )
+        )
+
+        XCTAssertEqual(context.windowStartDate, expectedWindowStart)
+    }
+
+    func testGraphHistoryWindowAlwaysUsesSevenDaysBeforeReset() {
+        let reset = Date(timeIntervalSince1970: 10_000)
+
+        let start = QuotaHistoryWindow.startDate(resetDate: reset)
+
+        XCTAssertEqual(start, reset.addingTimeInterval(-7 * 24 * 60 * 60))
+    }
+
+    func testGraphDayBoundariesUseCalendarMidnights() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let start = date(year: 2026, month: 5, day: 1, hour: 15, minute: 30, calendar: calendar)
+        let reset = start.addingTimeInterval(7 * 24 * 60 * 60)
+
+        let boundaries = QuotaGraphTimeAxis.dayBoundaries(
+            startDate: start,
+            resetDate: reset,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(boundaries.first?.date, date(year: 2026, month: 5, day: 2, hour: 0, minute: 0, calendar: calendar))
+        XCTAssertEqual(boundaries.count, 7)
+        XCTAssertTrue(
+            boundaries.allSatisfy {
+                calendar.component(.hour, from: $0.date) == 0
+                    && calendar.component(.minute, from: $0.date) == 0
+            }
+        )
+    }
+
+    func testGraphDayBandsUseCalendarDayBorders() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let start = date(year: 2026, month: 5, day: 1, hour: 15, minute: 30, calendar: calendar)
+        let reset = start.addingTimeInterval(7 * 24 * 60 * 60)
+
+        let bands = QuotaGraphTimeAxis.dayBands(startDate: start, resetDate: reset, calendar: calendar)
+
+        XCTAssertEqual(bands.first?.startDate, start)
+        XCTAssertEqual(bands.first?.endDate, date(year: 2026, month: 5, day: 2, hour: 0, minute: 0, calendar: calendar))
+        XCTAssertEqual(bands.last?.endDate, reset)
+    }
+
+    func testRateLimitRetryDateUsesCloudKitRetryAfter() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let error = NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.requestRateLimited.rawValue,
+            userInfo: [CKErrorRetryAfterKey: 42]
+        )
+
+        let retryAt = CloudQuotaSampleSyncPolicy.retryDate(for: error, now: now)
+
+        XCTAssertEqual(retryAt, now.addingTimeInterval(42))
+    }
+
+    func testStatusShowsRateLimitedWhenRetryIsFuture() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let retryAt = now.addingTimeInterval(60)
+        var state = CloudQuotaSampleSyncState.empty
+        state.nextAllowedSyncAt = retryAt
+        state.nextAllowedSyncReason = .rateLimited
+
+        XCTAssertEqual(CloudQuotaSampleSyncPolicy.status(for: state, now: now), .rateLimited(retryAt))
+    }
+
+    func testTransientBackoffStatusDoesNotLookRateLimited() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let error = NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.networkUnavailable.rawValue
+        )
+        var state = CloudQuotaSampleSyncState.empty
+
+        CloudQuotaSampleSyncPolicy.apply(error: error, now: now, to: &state)
+
+        XCTAssertEqual(state.nextAllowedSyncAt, now.addingTimeInterval(5 * 60))
+        XCTAssertEqual(state.nextAllowedSyncReason, .transientFailure)
+        XCTAssertEqual(
+            CloudQuotaSampleSyncPolicy.status(for: state, now: now),
+            .failed("CloudKit temporarily unavailable; retrying")
+        )
+    }
+
+    func testChangeTokenResetBackoffStatusDoesNotLookRateLimited() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let error = NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.changeTokenExpired.rawValue
+        )
+        var state = CloudQuotaSampleSyncState.empty
+        state.zoneChangeTokenData = Data([1, 2, 3])
+        state.remoteSamplesByRecordName = remoteMetadata([sample(capturedAt: 900)])
+
+        CloudQuotaSampleSyncPolicy.apply(error: error, now: now, to: &state)
+
+        XCTAssertNil(state.zoneChangeTokenData)
+        XCTAssertTrue(state.remoteSamplesByRecordName.isEmpty)
+        XCTAssertEqual(state.nextAllowedSyncAt, now.addingTimeInterval(5 * 60))
+        XCTAssertEqual(state.nextAllowedSyncReason, .changeTokenReset)
+        XCTAssertEqual(
+            CloudQuotaSampleSyncPolicy.status(for: state, now: now),
+            .failed("CloudKit sync state reset; retrying")
+        )
+    }
+
+    func testRateLimitBackoffStatusRequiresRateLimitReason() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let retryAt = now.addingTimeInterval(42)
+        let error = NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.requestRateLimited.rawValue,
+            userInfo: [CKErrorRetryAfterKey: 42]
+        )
+        var state = CloudQuotaSampleSyncState.empty
+
+        CloudQuotaSampleSyncPolicy.apply(error: error, now: now, to: &state)
+
+        XCTAssertEqual(state.nextAllowedSyncAt, retryAt)
+        XCTAssertEqual(state.nextAllowedSyncReason, .rateLimited)
+        XCTAssertEqual(CloudQuotaSampleSyncPolicy.status(for: state, now: now), .rateLimited(retryAt))
+    }
+
+    func testCleanupCatchUpSyncUsesTwoMinuteIntervalWhileLegacyWindowIsIncomplete() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let context = CloudQuotaSampleCleanupContext(windowStartDate: Date(timeIntervalSince1970: 500))
+        var state = CloudQuotaSampleSyncState.empty
+        state.isCaughtUp = true
+        state.lastSuccessfulSyncAt = now
+        state.lastLegacyDefaultZoneScanAt = now
+
+        XCTAssertFalse(
+            CloudQuotaSampleSyncPolicy.shouldRunSync(
+                state: state,
+                cleanupContext: context,
+                now: now.addingTimeInterval(119)
+            )
+        )
+        XCTAssertTrue(
+            CloudQuotaSampleSyncPolicy.shouldRunSync(
+                state: state,
+                cleanupContext: context,
+                now: now.addingTimeInterval(120)
+            )
+        )
+
+        state.legacyDefaultZoneCompletedWindowStartDate = context.windowStartDate
+        XCTAssertFalse(
+            CloudQuotaSampleSyncPolicy.shouldRunSync(
+                state: state,
+                cleanupContext: context,
+                now: now.addingTimeInterval(120)
+            )
+        )
+    }
+
+    func testCustomZoneCleanupUsesTwoMinuteIntervalWhileCandidatesRemain() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let context = CloudQuotaSampleCleanupContext(windowStartDate: Date(timeIntervalSince1970: 500))
+        var state = CloudQuotaSampleSyncState.empty
+        state.isCaughtUp = true
+        state.lastCleanupAt = now
+        state.remoteSamplesByRecordName = remoteMetadata([sample(capturedAt: 100)])
+
+        XCTAssertFalse(
+            CloudQuotaSampleSyncPolicy.shouldRunCleanup(
+                state: state,
+                context: context,
+                now: now.addingTimeInterval(119)
+            )
+        )
+        XCTAssertTrue(
+            CloudQuotaSampleSyncPolicy.shouldRunCleanup(
+                state: state,
+                context: context,
+                now: now.addingTimeInterval(120)
+            )
+        )
+    }
+
+    func testLegacyDefaultZoneScanBridgesPreviousVersionUsersOncePerWindow() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let windowStart = Date(timeIntervalSince1970: 500)
+        let context = CloudQuotaSampleCleanupContext(windowStartDate: windowStart)
+        var state = CloudQuotaSampleSyncState.empty
+        state.isCaughtUp = true
+
+        XCTAssertTrue(
+            CloudQuotaSampleSyncPolicy.shouldRunLegacyDefaultZoneScan(
+                state: state,
+                context: context,
+                now: now
+            )
+        )
+
+        state.lastLegacyDefaultZoneScanAt = now
+        state.legacyDefaultZoneCompletedWindowStartDate = nil
+        XCTAssertFalse(
+            CloudQuotaSampleSyncPolicy.shouldRunLegacyDefaultZoneScan(
+                state: state,
+                context: context,
+                now: now.addingTimeInterval(119)
+            )
+        )
+        XCTAssertTrue(
+            CloudQuotaSampleSyncPolicy.shouldRunLegacyDefaultZoneScan(
+                state: state,
+                context: context,
+                now: now.addingTimeInterval(120)
+            )
+        )
+
+        state.legacyDefaultZoneCompletedWindowStartDate = windowStart
+        XCTAssertFalse(
+            CloudQuotaSampleSyncPolicy.shouldRunLegacyDefaultZoneScan(
+                state: state,
+                context: context,
+                now: now
+            )
+        )
+
+        let nextWindowContext = CloudQuotaSampleCleanupContext(windowStartDate: windowStart.addingTimeInterval(7 * 24 * 60 * 60))
+        XCTAssertTrue(
+            CloudQuotaSampleSyncPolicy.shouldRunLegacyDefaultZoneScan(
+                state: state,
+                context: nextWindowContext,
+                now: now.addingTimeInterval(7 * 24 * 60 * 60)
+            )
+        )
+    }
+
+    private func remoteMetadata(_ samples: [QuotaSample]) -> [String: CloudQuotaSampleRemoteMetadata] {
+        Dictionary(
+            uniqueKeysWithValues: samples.map {
+                (
+                    $0.syncRecordName,
+                    CloudQuotaSampleRemoteMetadata(recordName: $0.syncRecordName, sample: $0)
+                )
+            }
+        )
+    }
+
+    private func snapshot(reset: Date, windowMinutes: Int = 10_080) -> RateLimitSnapshot {
+        RateLimitSnapshot(
+            limitId: "codex",
+            limitName: "Codex",
+            primary: RateLimitWindow(
+                usedPercent: 5,
+                windowDurationMins: 300,
+                resetsAt: Int(reset.timeIntervalSince1970) - 3_600
+            ),
+            secondary: RateLimitWindow(
+                usedPercent: 12,
+                windowDurationMins: windowMinutes,
+                resetsAt: Int(reset.timeIntervalSince1970)
+            ),
+            credits: nil,
+            planType: "pro",
+            rateLimitReachedType: nil
+        )
+    }
+
+    private func date(
+        year: Int,
+        month: Int,
+        day: Int,
+        hour: Int,
+        minute: Int,
+        calendar: Calendar
+    ) -> Date {
+        calendar.date(
+            from: DateComponents(
+                calendar: calendar,
+                timeZone: calendar.timeZone,
+                year: year,
+                month: month,
+                day: day,
+                hour: hour,
+                minute: minute
+            )
+        )!
+    }
+
+    private func sample(
+        capturedAt: TimeInterval,
+        limitId: String = "codex",
+        resetAt: TimeInterval = 1_600,
+        usedPercent: Double = 12
+    ) -> QuotaSample {
+        QuotaSample(
+            capturedAt: Date(timeIntervalSince1970: capturedAt),
+            limitId: limitId,
+            limitName: nil,
+            weeklyUsedPercent: usedPercent,
+            weeklyWindowMinutes: 10_080,
+            weeklyResetsAt: Date(timeIntervalSince1970: resetAt),
+            fiveHourUsedPercent: 4,
+            fiveHourWindowMinutes: 300,
+            fiveHourResetsAt: Date(timeIntervalSince1970: 200),
+            planType: "pro",
+            rateLimitReachedType: nil
+        )
+    }
+}

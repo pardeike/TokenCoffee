@@ -29,6 +29,20 @@
             buildForAnalyzing = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
+               BlueprintIdentifier = "5CD2E81433BE2FAF891BF4FC"
+               BuildableName = "TokenCoffeeAppTests.xctest"
+               BlueprintName = "TokenCoffeeAppTests"
+               ReferencedContainer = "container:TokenCoffee.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
                BlueprintIdentifier = "EF1CDD5BB1E60C3894FC56E9"
                BuildableName = "TokenCoffeeCoreTests.xctest"
                BlueprintName = "TokenCoffeeCoreTests"
@@ -61,6 +75,17 @@
                BlueprintIdentifier = "EF1CDD5BB1E60C3894FC56E9"
                BuildableName = "TokenCoffeeCoreTests.xctest"
                BlueprintName = "TokenCoffeeCoreTests"
+               ReferencedContainer = "container:TokenCoffee.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "5CD2E81433BE2FAF891BF4FC"
+               BuildableName = "TokenCoffeeAppTests.xctest"
+               BlueprintName = "TokenCoffeeAppTests"
                ReferencedContainer = "container:TokenCoffee.xcodeproj">
             </BuildableReference>
          </TestableReference>

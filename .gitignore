@@ -1,5 +1,6 @@
 .DS_Store
 .build/
+.tokencoffee-runtime-backups/
 dist/
 DerivedData/
 build/
