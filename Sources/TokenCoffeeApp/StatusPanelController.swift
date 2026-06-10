@@ -31,9 +31,7 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
             updateStatusIcon(for: model.powerMode)
             button.target = self
             button.action = #selector(togglePanel)
-            if #available(macOS 27.0, *) {
-                statusItem.expandedInterfaceDelegate = self
-            }
+            installExpandedInterfaceDelegateIfAvailable()
         }
 
         model.$powerMode
@@ -73,8 +71,7 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
 
         togglePanelFromStatusItem()
 
-        if #available(macOS 27.0, *),
-           let expandedInterfaceSession = statusItem.expandedInterfaceSession {
+        if let expandedInterfaceSession = currentExpandedInterfaceSession() {
             cancelExpandedInterfaceSession(expandedInterfaceSession)
         }
     }
@@ -93,8 +90,7 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     }
 
     private func closePanel() {
-        if #available(macOS 27.0, *),
-           let expandedInterfaceSession = statusItem.expandedInterfaceSession {
+        if let expandedInterfaceSession = currentExpandedInterfaceSession() {
             cancelExpandedInterfaceSession(expandedInterfaceSession)
         }
 
@@ -113,12 +109,30 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         model.setPanelVisible(false)
     }
 
-    @available(macOS 27.0, *)
-    private func cancelExpandedInterfaceSession(
-        _ expandedInterfaceSession: NSStatusItemExpandedInterfaceSession
-    ) {
+    private func installExpandedInterfaceDelegateIfAvailable() {
+        let selector = NSSelectorFromString("setExpandedInterfaceDelegate:")
+        guard statusItem.responds(to: selector) else {
+            return
+        }
+
+        statusItem.setValue(self, forKey: "expandedInterfaceDelegate")
+    }
+
+    private func currentExpandedInterfaceSession() -> NSObject? {
+        let selector = NSSelectorFromString("expandedInterfaceSession")
+        guard statusItem.responds(to: selector) else {
+            return nil
+        }
+
+        return statusItem.value(forKey: "expandedInterfaceSession") as? NSObject
+    }
+
+    private func cancelExpandedInterfaceSession(_ expandedInterfaceSession: NSObject) {
         shouldIgnoreNextExpandedInterfaceEnd = true
-        expandedInterfaceSession.cancel()
+        let selector = NSSelectorFromString("cancel")
+        if expandedInterfaceSession.responds(to: selector) {
+            _ = expandedInterfaceSession.perform(selector)
+        }
         clearStatusItemHighlight()
         DispatchQueue.main.async { [weak self] in
             self?.clearStatusItemHighlight()
@@ -261,17 +275,18 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     }
 }
 
-@available(macOS 27.0, *)
-extension StatusPanelController: @MainActor NSStatusItemExpandedInterfaceDelegate {
+extension StatusPanelController {
+    @objc(statusItem:didBeginExpandedInterfaceSession:)
     func statusItem(
         _ statusItem: NSStatusItem,
-        didBegin expandedInterfaceSession: NSStatusItemExpandedInterfaceSession
+        didBeginExpandedInterfaceSession expandedInterfaceSession: NSObject
     ) {
         suppressStatusItemActionFallback()
         togglePanelFromStatusItem()
         cancelExpandedInterfaceSession(expandedInterfaceSession)
     }
 
+    @objc(statusItemDidEndExpandedInterfaceSession:animated:)
     func statusItemDidEndExpandedInterfaceSession(_ statusItem: NSStatusItem, animated: Bool) {
         if shouldIgnoreNextExpandedInterfaceEnd {
             shouldIgnoreNextExpandedInterfaceEnd = false

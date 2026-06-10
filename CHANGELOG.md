@@ -3,6 +3,7 @@
 ## 1.0.3
 
 - Made the menu bar icon toggle the panel on macOS 27 beta without leaving the status item highlighted.
+- Kept the macOS 27 menu bar integration buildable with older Xcode Cloud SDKs.
 - Built the project with Apple Swift 6.4.
 
 ## 1.0.2
