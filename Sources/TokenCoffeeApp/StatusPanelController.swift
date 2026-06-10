@@ -9,10 +9,12 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     private let statusItem: NSStatusItem
     private let panel: NSPanel
     private var cancellables: Set<AnyCancellable> = []
+    private var isClosingFromExpandedInterface = false
+    private var shouldIgnoreNextStatusItemAction = false
 
     init(model: AppModel) {
         self.model = model
-        self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         self.panel = PersistentPanel(
             contentRect: NSRect(x: 0, y: 0, width: 480, height: 272),
             styleMask: [.borderless],
@@ -25,9 +27,13 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         if let button = statusItem.button {
             button.title = ""
             button.imagePosition = .imageOnly
+            button.imageScaling = .scaleProportionallyDown
             updateStatusIcon(for: model.powerMode)
             button.target = self
             button.action = #selector(togglePanel)
+            if #available(macOS 27.0, *) {
+                statusItem.expandedInterfaceDelegate = self
+            }
         }
 
         model.$powerMode
@@ -61,13 +67,19 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     }
 
     @objc private func togglePanel() {
+        if #available(macOS 27.0, *),
+           statusItem.expandedInterfaceSession != nil {
+            if shouldIgnoreNextStatusItemAction {
+                return
+            }
+            closePanel()
+            return
+        }
+
         if panel.isVisible {
             closePanel()
         } else {
-            positionPanel()
-            NSApp.activate()
-            panel.makeKeyAndOrderFront(nil)
-            model.setPanelVisible(true)
+            openPanel()
         }
     }
 
@@ -76,6 +88,24 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     }
 
     private func closePanel() {
+        if #available(macOS 27.0, *),
+           !isClosingFromExpandedInterface,
+           let expandedInterfaceSession = statusItem.expandedInterfaceSession {
+            expandedInterfaceSession.cancel()
+            return
+        }
+
+        closePanelWithoutCancellingStatusItem()
+    }
+
+    private func openPanel() {
+        positionPanel()
+        NSApp.activate()
+        panel.makeKeyAndOrderFront(nil)
+        model.setPanelVisible(true)
+    }
+
+    private func closePanelWithoutCancellingStatusItem() {
         panel.orderOut(nil)
         model.setPanelVisible(false)
     }
@@ -183,7 +213,30 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         button.title = ""
         button.image = StatusItemIcon.makeImage(isActive: isActive)
         button.imagePosition = .imageOnly
+        button.imageScaling = .scaleProportionallyDown
         button.toolTip = isActive ? "Keeping awake" : "Idle"
+    }
+}
+
+@available(macOS 27.0, *)
+extension StatusPanelController: @MainActor NSStatusItemExpandedInterfaceDelegate {
+    func statusItem(
+        _ statusItem: NSStatusItem,
+        didBegin expandedInterfaceSession: NSStatusItemExpandedInterfaceSession
+    ) {
+        shouldIgnoreNextStatusItemAction = true
+        DispatchQueue.main.async { [weak self] in
+            self?.shouldIgnoreNextStatusItemAction = false
+        }
+        openPanel()
+    }
+
+    func statusItemDidEndExpandedInterfaceSession(_ statusItem: NSStatusItem, animated: Bool) {
+        isClosingFromExpandedInterface = true
+        defer {
+            isClosingFromExpandedInterface = false
+        }
+        closePanelWithoutCancellingStatusItem()
     }
 }
 

@@ -1,7 +1,8 @@
 # Changelog
 
-## 1.0.1
+## 1.0.2
 
+- Fixed the menu bar icon on macOS 27 beta by using the new status item expanded interface path while keeping older macOS behavior unchanged.
 - Reworked quota sample iCloud sync to use incremental CloudKit zone changes instead of full-table queries.
 - Added CloudKit rate-limit backoff and a `sync paused` status so throttling is no longer reported as a generic sync failure.
 - Added bounded remote cleanup for `QuotaSample` records older than the current weekly graph window, including a throttled bridge for records written by earlier builds.
