@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.3
+
+- Made the menu bar icon toggle the panel on macOS 27 beta without leaving the status item highlighted.
+- Built the project with Apple Swift 6.4.
+
 ## 1.0.2
 
 - Fixed the menu bar icon on macOS 27 beta by using the new status item expanded interface path while keeping older macOS behavior unchanged.

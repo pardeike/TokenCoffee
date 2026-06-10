@@ -9,8 +9,8 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     private let statusItem: NSStatusItem
     private let panel: NSPanel
     private var cancellables: Set<AnyCancellable> = []
-    private var isClosingFromExpandedInterface = false
-    private var shouldIgnoreNextStatusItemAction = false
+    private var shouldIgnoreNextExpandedInterfaceEnd = false
+    private var ignoreStatusItemActionUntil: Date?
 
     init(model: AppModel) {
         self.model = model
@@ -67,20 +67,25 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     }
 
     @objc private func togglePanel() {
-        if #available(macOS 27.0, *),
-           statusItem.expandedInterfaceSession != nil {
-            if shouldIgnoreNextStatusItemAction {
-                return
-            }
-            closePanel()
+        if shouldIgnoreStatusItemAction() {
             return
         }
 
-        if panel.isVisible {
-            closePanel()
-        } else {
-            openPanel()
+        togglePanelFromStatusItem()
+
+        if #available(macOS 27.0, *),
+           let expandedInterfaceSession = statusItem.expandedInterfaceSession {
+            cancelExpandedInterfaceSession(expandedInterfaceSession)
         }
+    }
+
+    private func togglePanelFromStatusItem() {
+        if panel.isVisible {
+            closePanelWithoutCancellingStatusItem()
+            return
+        }
+
+        openPanel()
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -89,10 +94,8 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
 
     private func closePanel() {
         if #available(macOS 27.0, *),
-           !isClosingFromExpandedInterface,
            let expandedInterfaceSession = statusItem.expandedInterfaceSession {
-            expandedInterfaceSession.cancel()
-            return
+            cancelExpandedInterfaceSession(expandedInterfaceSession)
         }
 
         closePanelWithoutCancellingStatusItem()
@@ -108,6 +111,46 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     private func closePanelWithoutCancellingStatusItem() {
         panel.orderOut(nil)
         model.setPanelVisible(false)
+    }
+
+    @available(macOS 27.0, *)
+    private func cancelExpandedInterfaceSession(
+        _ expandedInterfaceSession: NSStatusItemExpandedInterfaceSession
+    ) {
+        shouldIgnoreNextExpandedInterfaceEnd = true
+        expandedInterfaceSession.cancel()
+        clearStatusItemHighlight()
+        DispatchQueue.main.async { [weak self] in
+            self?.clearStatusItemHighlight()
+        }
+    }
+
+    private func clearStatusItemHighlight() {
+        statusItem.button?.highlight(false)
+    }
+
+    private func suppressStatusItemActionFallback() {
+        let deadline = Date().addingTimeInterval(0.25)
+        ignoreStatusItemActionUntil = deadline
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard self?.ignoreStatusItemActionUntil == deadline else {
+                return
+            }
+            self?.ignoreStatusItemActionUntil = nil
+        }
+    }
+
+    private func shouldIgnoreStatusItemAction() -> Bool {
+        guard let deadline = ignoreStatusItemActionUntil else {
+            return false
+        }
+
+        if Date() < deadline {
+            return true
+        }
+
+        ignoreStatusItemActionUntil = nil
+        return false
     }
 
     private static func showAboutPanel() {
@@ -224,18 +267,17 @@ extension StatusPanelController: @MainActor NSStatusItemExpandedInterfaceDelegat
         _ statusItem: NSStatusItem,
         didBegin expandedInterfaceSession: NSStatusItemExpandedInterfaceSession
     ) {
-        shouldIgnoreNextStatusItemAction = true
-        DispatchQueue.main.async { [weak self] in
-            self?.shouldIgnoreNextStatusItemAction = false
-        }
-        openPanel()
+        suppressStatusItemActionFallback()
+        togglePanelFromStatusItem()
+        cancelExpandedInterfaceSession(expandedInterfaceSession)
     }
 
     func statusItemDidEndExpandedInterfaceSession(_ statusItem: NSStatusItem, animated: Bool) {
-        isClosingFromExpandedInterface = true
-        defer {
-            isClosingFromExpandedInterface = false
+        if shouldIgnoreNextExpandedInterfaceEnd {
+            shouldIgnoreNextExpandedInterfaceEnd = false
+            return
         }
+
         closePanelWithoutCancellingStatusItem()
     }
 }
