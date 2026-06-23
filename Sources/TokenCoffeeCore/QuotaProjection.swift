@@ -350,7 +350,7 @@ public enum QuotaProjectionEngine {
         now: Date,
         samples: [QuotaSample]
     ) -> QuotaCycleRunForecast? {
-        TokenUsageForecastAdapter.makeCycleRunForecast(
+        QuotaForecastKitAdapter.makeCycleRunForecast(
             current: current,
             startDate: startDate,
             resetDate: resetDate,

@@ -28,9 +28,8 @@ settings:
     Release:
       ONLY_ACTIVE_ARCH: NO
 packages:
-  TokenUsageForecast:
-    url: https://github.com/pardeike/TokenUsageForecast.git
-    from: 1.1.0
+  QuotaForecastKit:
+    path: Packages/QuotaForecastKit
 targets:
   TokenCoffeeCore:
     type: framework
@@ -45,8 +44,8 @@ targets:
         CFBundleShortVersionString: "0.1"
         CFBundleVersion: "1"
     dependencies:
-      - package: TokenUsageForecast
-        product: TokenUsageForecast
+      - package: QuotaForecastKit
+        product: QuotaForecastKit
       - sdk: IOKit.framework
       - sdk: Security.framework
     settings:

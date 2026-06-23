@@ -91,7 +91,7 @@ final class QuotaProjectionTests: XCTestCase {
         XCTAssertEqual(projection.paceState, .slowDown)
     }
 
-    func testCycleRunForecastRepeatsResetAlignedOvernightRuns() {
+    func testCycleRunForecastReplaysSparseOvernightRunsIntoLowPath() {
         let day: TimeInterval = 24 * 60 * 60
         let start = Date(timeIntervalSince1970: 1_000)
         let reset = start.addingTimeInterval(7 * day)
@@ -111,7 +111,8 @@ final class QuotaProjectionTests: XCTestCase {
             return
         }
 
-        XCTAssertGreaterThan(forecast.lowProjectedWeeklyUsedPercentAtReset, 70)
+        XCTAssertGreaterThan(forecast.lowProjectedWeeklyUsedPercentAtReset, 20)
+        XCTAssertLessThan(forecast.lowProjectedWeeklyUsedPercentAtReset, 30)
         XCTAssertGreaterThan(forecast.highProjectedWeeklyUsedPercentAtReset, forecast.lowProjectedWeeklyUsedPercentAtReset)
         XCTAssertFalse(forecast.averageRuns.isEmpty)
         XCTAssertFalse(forecast.ghostRuns.isEmpty)
@@ -126,14 +127,15 @@ final class QuotaProjectionTests: XCTestCase {
         XCTAssertEqual(lineSegments.first?.startUsedPercent ?? 0, 10, accuracy: 0.001)
         XCTAssertEqual(lineSegments.last?.endDate, reset)
         XCTAssertEqual(lineSegments.last?.endUsedPercent ?? 0, forecast.projectedWeeklyUsedPercentAtReset, accuracy: 0.001)
-        XCTAssertTrue(lineSegments.contains { $0.kind != .projectedIdle })
+        XCTAssertTrue(lineSegments.contains { $0.kind == .projectedActivity })
+        XCTAssertTrue(forecast.highLineSegments.contains { $0.kind != .projectedIdle })
         assertForecastLineSegmentsAreConnected(lineSegments)
         XCTAssertEqual(forecast.corridorPoints.first?.date, now)
         XCTAssertEqual(forecast.corridorPoints.last?.date, reset)
         XCTAssertTrue(forecast.corridorPoints.allSatisfy { $0.lowerUsedPercent <= $0.upperUsedPercent })
     }
 
-    func testCycleRunForecastRepeatsBlendedHotspotRhythmAcrossFutureDays() {
+    func testCycleRunForecastBuildsOrderedScenarioLinesForBlendedHotspots() {
         let day: TimeInterval = 24 * 60 * 60
         let hour: TimeInterval = 60 * 60
         let start = Date(timeIntervalSince1970: 1_000)
@@ -177,20 +179,22 @@ final class QuotaProjectionTests: XCTestCase {
             )
         }
 
-        XCTAssertTrue(highFutureDayGains.allSatisfy { $0 > 0 }, "\(highFutureDayGains)")
-        XCTAssertTrue(lowFutureDayGains.allSatisfy { $0 > 0 }, "\(lowFutureDayGains)")
-        XCTAssertGreaterThan(highFutureDayGains.reduce(0, +), lowFutureDayGains.reduce(0, +))
+        XCTAssertTrue(highFutureDayGains.allSatisfy { $0 >= 0 }, "\(highFutureDayGains)")
+        XCTAssertTrue(lowFutureDayGains.allSatisfy { $0 >= 0 }, "\(lowFutureDayGains)")
+        XCTAssertGreaterThanOrEqual(highFutureDayGains.reduce(0, +), lowFutureDayGains.reduce(0, +))
         XCTAssertGreaterThanOrEqual(
             forecast.highLineSegments.filter { $0.kind == .projectedActivity }.count,
             forecast.lowLineSegments.filter { $0.kind == .projectedActivity }.count
         )
-        XCTAssertFalse(forecast.averageRuns.isEmpty)
-        XCTAssertFalse(forecast.ghostRuns.isEmpty)
+        XCTAssertGreaterThanOrEqual(
+            forecast.highProjectedWeeklyUsedPercentAtReset,
+            forecast.lowProjectedWeeklyUsedPercentAtReset
+        )
         assertForecastLineSegmentsAreConnected(forecast.lowLineSegments)
         assertForecastLineSegmentsAreConnected(forecast.highLineSegments)
     }
 
-    func testCycleRunForecastWeightsCurrentCycleGainOverHistory() {
+    func testCycleRunForecastReplaysCurrentCycleGainIntoLowPath() {
         let day: TimeInterval = 24 * 60 * 60
         let start = Date(timeIntervalSince1970: 1_000)
         let reset = start.addingTimeInterval(7 * day)
@@ -208,7 +212,8 @@ final class QuotaProjectionTests: XCTestCase {
         let forecast = projection.cycleRunForecast
 
         XCTAssertNotNil(forecast)
-        XCTAssertGreaterThan(forecast?.lowProjectedWeeklyUsedPercentAtReset ?? 0, 100)
+        XCTAssertGreaterThan(forecast?.lowProjectedWeeklyUsedPercentAtReset ?? 0, 65)
+        XCTAssertLessThan(forecast?.lowProjectedWeeklyUsedPercentAtReset ?? 0, 80)
         XCTAssertGreaterThan(
             forecast?.highProjectedWeeklyUsedPercentAtReset ?? 0,
             forecast?.lowProjectedWeeklyUsedPercentAtReset ?? 0
@@ -245,17 +250,158 @@ final class QuotaProjectionTests: XCTestCase {
             return
         }
 
-        XCTAssertGreaterThan(forecast.lowProjectedWeeklyUsedPercentAtReset, 80)
+        XCTAssertGreaterThan(forecast.lowProjectedWeeklyUsedPercentAtReset, 60)
+        XCTAssertLessThan(forecast.lowProjectedWeeklyUsedPercentAtReset, 75)
         XCTAssertGreaterThan(forecast.highProjectedWeeklyUsedPercentAtReset, forecast.lowProjectedWeeklyUsedPercentAtReset)
-        XCTAssertGreaterThan(forecast.highProjectedWeeklyUsedPercentAtReset, 120)
-        XCTAssertLessThan(forecast.highProjectedWeeklyUsedPercentAtReset, 150)
-        XCTAssertEqual(projection.paceState, .slowDown)
+        XCTAssertGreaterThan(forecast.highProjectedWeeklyUsedPercentAtReset, 90)
+        XCTAssertLessThan(forecast.highProjectedWeeklyUsedPercentAtReset, 130)
+        XCTAssertEqual(projection.paceState, .watch)
         XCTAssertTrue(forecast.highLineSegments.contains { $0.kind == .projectedActivity })
         assertForecastLineSegmentsAreConnected(forecast.lowLineSegments)
         assertForecastLineSegmentsAreConnected(forecast.highLineSegments)
     }
 
-    func testCycleRunForecastKeepsLowAndHighTogetherWithoutGrowthSignal() {
+    func testCycleRunForecastTreatsTinyPostIdleActivityAsWeakEvidence() {
+        let day: TimeInterval = 24 * 60 * 60
+        let hour: TimeInterval = 60 * 60
+        let minute: TimeInterval = 60
+        let start = Date(timeIntervalSince1970: 1_000)
+        let reset = start.addingTimeInterval(7 * day)
+        let now = start.addingTimeInterval(day + 12 * hour)
+        let snapshot = snapshot(usedPercent: 15, reset: reset)
+        let samples = [
+            sample(at: start.addingTimeInterval(1 * hour), usedPercent: 0, reset: reset),
+            sample(at: start.addingTimeInterval(5 * hour), usedPercent: 13, reset: reset),
+            sample(at: now.addingTimeInterval(-20 * minute), usedPercent: 13, reset: reset),
+            sample(at: now, usedPercent: 15, reset: reset)
+        ]
+
+        let projection = QuotaProjectionEngine.make(snapshot: snapshot, samples: samples, now: now)
+        guard let forecast = projection.cycleRunForecast else {
+            XCTFail("Expected cycle forecast")
+            return
+        }
+
+        XCTAssertGreaterThan(forecast.highProjectedWeeklyUsedPercentAtReset, forecast.lowProjectedWeeklyUsedPercentAtReset)
+        XCTAssertLessThan(forecast.highProjectedWeeklyUsedPercentAtReset, 115)
+        XCTAssertLessThan(
+            activityGain(
+                in: forecast.highLineSegments,
+                startDate: now,
+                endDate: now.addingTimeInterval(8 * hour)
+            ),
+            20
+        )
+        assertForecastLineSegmentsAreConnected(forecast.highLineSegments)
+    }
+
+    func testCycleRunForecastHighPathRespondsToLengtheningIdleTail() {
+        let day: TimeInterval = 24 * 60 * 60
+        let hour: TimeInterval = 60 * 60
+        let start = Date(timeIntervalSince1970: 1_000)
+        let reset = start.addingTimeInterval(7 * day)
+        let earlyNow = start.addingTimeInterval(16 * hour)
+        let laterNow = start.addingTimeInterval(20 * hour)
+        let samples = [
+            sample(at: start.addingTimeInterval(1 * hour), usedPercent: 0, reset: reset),
+            sample(at: start.addingTimeInterval(5 * hour), usedPercent: 13, reset: reset)
+        ]
+
+        let earlyProjection = QuotaProjectionEngine.make(
+            snapshot: snapshot(usedPercent: 13, reset: reset),
+            samples: samples,
+            now: earlyNow
+        )
+        let laterProjection = QuotaProjectionEngine.make(
+            snapshot: snapshot(usedPercent: 13, reset: reset),
+            samples: samples,
+            now: laterNow
+        )
+        guard let earlyForecast = earlyProjection.cycleRunForecast,
+              let laterForecast = laterProjection.cycleRunForecast else {
+            XCTFail("Expected cycle forecasts")
+            return
+        }
+
+        XCTAssertGreaterThan(
+            earlyForecast.highProjectedWeeklyUsedPercentAtReset,
+            earlyForecast.lowProjectedWeeklyUsedPercentAtReset
+        )
+        XCTAssertLessThan(
+            laterForecast.highProjectedWeeklyUsedPercentAtReset,
+            earlyForecast.highProjectedWeeklyUsedPercentAtReset - 5
+        )
+        XCTAssertLessThan(laterForecast.highProjectedWeeklyUsedPercentAtReset, 120)
+        assertForecastLineSegmentsAreConnected(laterForecast.highLineSegments)
+    }
+
+    func testCycleRunForecastCapsOverlongCurrentHotRunAgainstPriorBoundedRun() {
+        let day: TimeInterval = 24 * 60 * 60
+        let hour: TimeInterval = 60 * 60
+        let start = Date(timeIntervalSince1970: 1_000)
+        let reset = start.addingTimeInterval(7 * day)
+        let currentRunStart = start.addingTimeInterval(4 * day + 8 * hour)
+        let now = currentRunStart.addingTimeInterval(8 * hour)
+        let snapshot = snapshot(usedPercent: 49, reset: reset)
+        let samples = [
+            sample(at: start.addingTimeInterval(1 * hour), usedPercent: 0, reset: reset),
+            sample(at: start.addingTimeInterval(5 * hour), usedPercent: 20, reset: reset),
+            sample(at: currentRunStart, usedPercent: 20, reset: reset),
+            sample(at: currentRunStart.addingTimeInterval(2 * hour), usedPercent: 32, reset: reset),
+            sample(at: currentRunStart.addingTimeInterval(4 * hour), usedPercent: 41, reset: reset),
+            sample(at: now, usedPercent: 49, reset: reset)
+        ]
+
+        let projection = QuotaProjectionEngine.make(snapshot: snapshot, samples: samples, now: now)
+        guard let forecast = projection.cycleRunForecast else {
+            XCTFail("Expected cycle forecast")
+            return
+        }
+
+        XCTAssertGreaterThan(forecast.highProjectedWeeklyUsedPercentAtReset, forecast.lowProjectedWeeklyUsedPercentAtReset)
+        XCTAssertLessThan(forecast.highProjectedWeeklyUsedPercentAtReset, 145)
+        XCTAssertLessThan(
+            activityGain(
+                in: forecast.highLineSegments,
+                startDate: now,
+                endDate: now.addingTimeInterval(8 * hour)
+            ),
+            15
+        )
+        assertForecastLineSegmentsAreConnected(forecast.highLineSegments)
+    }
+
+    func testCycleRunForecastCapsRecentlyEndedOverlongHotRunAgainstPriorBoundedRun() {
+        let day: TimeInterval = 24 * 60 * 60
+        let hour: TimeInterval = 60 * 60
+        let minute: TimeInterval = 60
+        let start = Date(timeIntervalSince1970: 1_000)
+        let reset = start.addingTimeInterval(7 * day)
+        let currentRunStart = start.addingTimeInterval(4 * day + 8 * hour)
+        let currentRunEnd = currentRunStart.addingTimeInterval(8 * hour)
+        let now = currentRunEnd.addingTimeInterval(30 * minute)
+        let snapshot = snapshot(usedPercent: 49, reset: reset)
+        let samples = [
+            sample(at: start.addingTimeInterval(1 * hour), usedPercent: 0, reset: reset),
+            sample(at: start.addingTimeInterval(5 * hour), usedPercent: 13, reset: reset),
+            sample(at: currentRunStart, usedPercent: 13, reset: reset),
+            sample(at: currentRunStart.addingTimeInterval(2 * hour), usedPercent: 25, reset: reset),
+            sample(at: currentRunStart.addingTimeInterval(4 * hour), usedPercent: 37, reset: reset),
+            sample(at: currentRunEnd, usedPercent: 49, reset: reset)
+        ]
+
+        let projection = QuotaProjectionEngine.make(snapshot: snapshot, samples: samples, now: now)
+        guard let forecast = projection.cycleRunForecast else {
+            XCTFail("Expected cycle forecast")
+            return
+        }
+
+        XCTAssertGreaterThanOrEqual(forecast.highProjectedWeeklyUsedPercentAtReset, forecast.lowProjectedWeeklyUsedPercentAtReset)
+        XCTAssertLessThan(forecast.highProjectedWeeklyUsedPercentAtReset, 130)
+        assertForecastLineSegmentsAreConnected(forecast.highLineSegments)
+    }
+
+    func testCycleRunForecastKeepsSteadyDailyHotspotsBounded() {
         let day: TimeInterval = 24 * 60 * 60
         let hour: TimeInterval = 60 * 60
         let start = Date(timeIntervalSince1970: 1_000)
@@ -278,11 +424,12 @@ final class QuotaProjectionTests: XCTestCase {
             return
         }
 
-        XCTAssertGreaterThan(forecast.lowProjectedWeeklyUsedPercentAtReset, 60)
+        XCTAssertGreaterThan(forecast.lowProjectedWeeklyUsedPercentAtReset, 20)
+        XCTAssertLessThan(forecast.lowProjectedWeeklyUsedPercentAtReset, 30)
         XCTAssertGreaterThan(forecast.highProjectedWeeklyUsedPercentAtReset, forecast.lowProjectedWeeklyUsedPercentAtReset)
-        XCTAssertGreaterThan(forecast.highProjectedWeeklyUsedPercentAtReset, 90)
-        XCTAssertLessThan(forecast.highProjectedWeeklyUsedPercentAtReset, 110)
-        XCTAssertEqual(projection.paceState, .watch)
+        XCTAssertGreaterThan(forecast.highProjectedWeeklyUsedPercentAtReset, 25)
+        XCTAssertLessThan(forecast.highProjectedWeeklyUsedPercentAtReset, 45)
+        XCTAssertEqual(projection.paceState, .fine)
         XCTAssertTrue(forecast.corridorPoints.allSatisfy { $0.lowerUsedPercent <= $0.upperUsedPercent })
     }
 
@@ -302,8 +449,8 @@ final class QuotaProjectionTests: XCTestCase {
         let projection = QuotaProjectionEngine.make(snapshot: snapshot, samples: samples, now: now)
 
         XCTAssertGreaterThan(projection.projectedWeeklyUsedPercentAtReset ?? 0, 100)
-        XCTAssertGreaterThan(projection.cycleRunForecast?.projectedWeeklyUsedPercentAtReset ?? 0, 100)
-        XCTAssertEqual(projection.paceState, .slowDown)
+        XCTAssertLessThan(projection.cycleRunForecast?.highProjectedWeeklyUsedPercentAtReset ?? 0, 100)
+        XCTAssertEqual(projection.paceState, .watch)
     }
 
     func testCycleRunForecastLineStartsWithCurrentProjectedActivityInsideRun() {
@@ -328,10 +475,10 @@ final class QuotaProjectionTests: XCTestCase {
             return
         }
 
-        XCTAssertEqual(first.kind, .projectedIdle)
+        XCTAssertEqual(first.kind, .currentProjectedActivity)
         XCTAssertEqual(first.startDate, now)
         XCTAssertEqual(first.startUsedPercent, 25, accuracy: 0.001)
-        XCTAssertTrue(lineSegments.contains { $0.kind == .currentProjectedActivity })
+        XCTAssertTrue(projection.cycleRunForecast?.highLineSegments.contains { $0.kind == .currentProjectedActivity } ?? false)
         XCTAssertEqual(lineSegments.last?.endDate, reset)
         assertForecastLineSegmentsAreConnected(lineSegments)
     }
@@ -385,9 +532,11 @@ final class QuotaProjectionTests: XCTestCase {
             XCTAssertEqual(segments.first?.startDate, now)
             XCTAssertEqual(segments.first?.startUsedPercent ?? 0, 10, accuracy: 0.001)
             XCTAssertEqual(segments.last?.endDate, reset)
-            XCTAssertTrue(segments.contains { $0.kind == .projectedActivity })
             assertForecastLineSegmentsAreConnected(segments)
         }
+        XCTAssertTrue(
+            (forecast.lowLineSegments + forecast.highLineSegments).contains { $0.kind == .projectedActivity }
+        )
     }
 
     func testCycleRunForecastMergesShortFlatGapInsideActivityPeriod() {

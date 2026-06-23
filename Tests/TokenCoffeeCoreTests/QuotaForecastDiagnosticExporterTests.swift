@@ -25,11 +25,12 @@ final class QuotaForecastDiagnosticExporterTests: XCTestCase {
 
         XCTAssertEqual(int(samplesSummary["storedSampleCount"]), fixture.samples.count)
         XCTAssertEqual(int(samplesSummary["currentWindowSampleCount"]), fixture.samples.count)
-        XCTAssertEqual(int(samplesSummary["inputSampleCount"]), fixture.samples.count)
-        XCTAssertEqual(packageSamples.count, fixture.samples.count)
-        XCTAssertEqual(bool(packageParameters["capForecastAt100Percent"]), false)
-        XCTAssertEqual(double(optimistic["finalUsedPercent"]), 103.752, accuracy: 0.001)
-        XCTAssertEqual(double(pessimistic["finalUsedPercent"]), 147.377, accuracy: 0.001)
+        XCTAssertEqual(int(samplesSummary["inputSampleCount"]), 216)
+        XCTAssertEqual(packageSamples.count, 216)
+        XCTAssertEqual(bool(packageParameters["allowOverrun"]), true)
+        XCTAssertEqual(int(packageParameters["ensembleSize"]), 64)
+        XCTAssertEqual(double(optimistic["endpoint"]), 81, accuracy: 0.001)
+        XCTAssertEqual(double(pessimistic["endpoint"]), 173, accuracy: 0.001)
         XCTAssertEqual(double(samplesSummary["firstInputOffsetSeconds"]), Double(fixture.samples[0].timeOffsetSeconds), accuracy: 0.001)
         XCTAssertEqual(double(samplesSummary["lastInputOffsetSeconds"]), Double(fixture.samples.last?.timeOffsetSeconds ?? 0), accuracy: 0.001)
     }
@@ -60,12 +61,14 @@ final class QuotaForecastDiagnosticExporterTests: XCTestCase {
 
         XCTAssertEqual(int(samplesSummary["storedSampleCount"]), 5)
         XCTAssertEqual(int(samplesSummary["currentWindowSampleCount"]), 2)
-        XCTAssertEqual(int(samplesSummary["inputSampleCount"]), 3)
-        XCTAssertEqual(packageSamples.count, 3)
+        XCTAssertEqual(int(samplesSummary["inputSampleCount"]), 5)
+        XCTAssertEqual(packageSamples.count, 5)
         XCTAssertEqual(double(try dictionary(packageSamples[0])["offsetSeconds"]), 60 * 60, accuracy: 0.001)
-        XCTAssertEqual(double(try dictionary(packageSamples[1])["offsetSeconds"]), 2 * 60 * 60, accuracy: 0.001)
-        XCTAssertEqual(double(try dictionary(packageSamples[2])["offsetSeconds"]), 3 * 60 * 60, accuracy: 0.001)
-        XCTAssertEqual(double(try dictionary(packageSamples[2])["weeklyUsedPercent"]), 10, accuracy: 0.001)
+        XCTAssertEqual(double(try dictionary(packageSamples[1])["offsetSeconds"]), 90 * 60, accuracy: 0.001)
+        XCTAssertEqual(double(try dictionary(packageSamples[2])["offsetSeconds"]), 2 * 60 * 60, accuracy: 0.001)
+        XCTAssertEqual(double(try dictionary(packageSamples[4])["offsetSeconds"]), 3 * 60 * 60, accuracy: 0.001)
+        XCTAssertEqual(double(try dictionary(packageSamples[2])["weeklyUsedPercent"]), 5, accuracy: 0.001)
+        XCTAssertEqual(double(try dictionary(packageSamples[4])["weeklyUsedPercent"]), 10, accuracy: 0.001)
     }
 
     private static var demoQuotaDataURL: URL {

@@ -1,5 +1,5 @@
 import Foundation
-import TokenUsageForecast
+import QuotaForecastKit
 
 public enum QuotaForecastDiagnosticExporter {
     public static func makeDiagnosticsData(
@@ -11,13 +11,19 @@ public enum QuotaForecastDiagnosticExporter {
     ) throws -> Data {
         let projection = QuotaProjectionEngine.make(snapshot: snapshot, samples: samples, now: now)
         let packageContext = makePackageContext(snapshot: snapshot, samples: samples, now: now)
-        let packageResult: UsageForecastResult?
+        let firstInputOffsetSeconds = packageContext.input.flatMap { input in
+            input.observedDates.first.map { $0.timeIntervalSince(input.weeklyStartDate) }
+        }
+        let lastInputOffsetSeconds = packageContext.input.flatMap { input in
+            input.observedDates.last.map { $0.timeIntervalSince(input.weeklyStartDate) }
+        }
+        let packageResult: QuotaForecast?
         let packageError: String?
 
         if let input = packageContext.input {
             if input.hasUsageIncreases {
                 do {
-                    packageResult = try TokenUsageForecastAdapter.forecast(input.snapshot)
+                    packageResult = try QuotaForecastKitAdapter.forecast(input)
                     packageError = nil
                 } catch {
                     packageResult = nil
@@ -40,9 +46,9 @@ public enum QuotaForecastDiagnosticExporter {
             samples: ForecastSampleSummary(
                 storedSampleCount: samples.count,
                 currentWindowSampleCount: packageContext.currentWindowSampleCount,
-                inputSampleCount: packageContext.input?.snapshot.samples.count ?? 0,
-                firstInputOffsetSeconds: packageContext.input?.snapshot.samples.first?.offsetSeconds,
-                lastInputOffsetSeconds: packageContext.input?.snapshot.samples.last?.offsetSeconds
+                inputSampleCount: packageContext.input?.observedValues.count ?? 0,
+                firstInputOffsetSeconds: firstInputOffsetSeconds,
+                lastInputOffsetSeconds: lastInputOffsetSeconds
             ),
             display: ForecastDisplaySummary(
                 currentWeeklyUsedPercent: projection.currentWeeklyUsedPercent,
@@ -53,8 +59,10 @@ public enum QuotaForecastDiagnosticExporter {
                     ?? projection.projectedWeeklyUsedPercentAtReset,
                 paceState: projection.paceState.rawValue
             ),
-            packageParameters: .defaults,
-            packageInput: packageContext.input?.snapshot,
+            packageParameters: QuotaForecastKitAdapter.parametersSummary(
+                for: packageContext.input?.configuration ?? QuotaForecastKitAdapter.defaultConfiguration()
+            ),
+            packageInput: packageContext.input,
             packageResult: packageResult,
             packageError: packageError
         )
@@ -109,7 +117,7 @@ public enum QuotaForecastDiagnosticExporter {
             now: now,
             samples: samples
         )
-        let input = TokenUsageForecastAdapter.makeForecastInput(
+        let input = QuotaForecastKitAdapter.makeForecastInput(
             current: current,
             startDate: startDate,
             resetDate: resetDate,
@@ -134,7 +142,7 @@ public enum QuotaForecastDiagnosticExporter {
 private struct ForecastPackageContext {
     let window: ForecastWindowSummary?
     let currentWindowSampleCount: Int
-    let input: TokenUsageForecastInput?
+    let input: QuotaForecastKitInput?
     let errorDescription: String?
 }
 
@@ -145,9 +153,9 @@ private struct QuotaForecastDiagnosticsPayload: Encodable {
     let window: ForecastWindowSummary?
     let samples: ForecastSampleSummary
     let display: ForecastDisplaySummary
-    let packageParameters: ForecastParameters
-    let packageInput: UsageLimitSnapshot?
-    let packageResult: UsageForecastResult?
+    let packageParameters: QuotaForecastKitParameterSummary
+    let packageInput: QuotaForecastKitInput?
+    let packageResult: QuotaForecast?
     let packageError: String?
 }
 
