@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.6
+
+- Made initial iCloud history sync catch up much faster by fetching consecutive change pages while respecting CloudKit retry delays.
+- Preserved downloaded history when uploads fail or a local history-file write is interrupted.
+- Added detection and retry backoff for stalled iCloud sync cursors.
+
 ## 1.0.5
 
 - Restored reliable menu-item toggling, immediate window focus, and title-area dragging on current macOS betas.
