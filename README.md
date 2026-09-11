@@ -105,6 +105,10 @@ Token Coffee stores quota samples in:
 
 CloudKit-capable builds incrementally merge this file with private iCloud records of type `QuotaSample` in a per-user custom zone named `QuotaSamples`. Builds upgraded from earlier versions also scan the legacy default-zone `QuotaSample` records in small batches so existing synced history remains visible while stale legacy records are culled.
 
+When CloudKit reports more changes, the app fetches consecutive pages sequentially, including empty and deletion-only pages. Each catch-up burst starts at most 100 requests and stops starting new requests after 20 seconds; an in-flight request can take longer. Unfinished catch-up continues on the next quota refresh, normally about a minute later, while caught-up clients retain the normal 15-minute sync interval (or the existing two-minute cleanup interval). CloudKit retry-after delays take precedence over both schedules. A non-advancing cursor produces a sync failure and a five-minute backoff instead of an endless request loop.
+
+`quota-cloud-sync-state.json` stores the change cursor and a recoverable history cache together in an atomic checkpoint before uploads or cleanup. A subsequent upload failure or interrupted JSONL write cannot lose the downloaded history. If a page within a burst fails, that burst resumes from the previous checkpoint after any required backoff. Existing state files remain readable. For App Store builds, these files live inside the app's sandbox at `~/Library/Containers/com.pardeike.TokenCoffee/Data/Library/Application Support/TokenCoffee/`.
+
 Raw quota samples are retained for 14 days, with a hard cap of 25,000 samples after dedupe. CloudKit-capable builds delete remote `QuotaSample` records only after incremental sync has caught up, and only when the samples are older than the seven-day graph window.
 
 Closed-lid wake support installs this LaunchAgent fail-safe:

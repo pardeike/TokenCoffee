@@ -317,6 +317,34 @@ final class CloudQuotaSampleSyncPolicyTests: XCTestCase {
         XCTAssertEqual(retryAt, now.addingTimeInterval(42))
     }
 
+    func testCaughtUpClientKeepsNormalFifteenMinuteInterval() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        var state = CloudQuotaSampleSyncState.empty
+        state.isCaughtUp = true
+        state.lastSuccessfulSyncAt = now
+
+        XCTAssertFalse(CloudQuotaSampleSyncPolicy.shouldRunSync(state: state, now: now.addingTimeInterval(899)))
+        XCTAssertTrue(CloudQuotaSampleSyncPolicy.shouldRunSync(state: state, now: now.addingTimeInterval(900)))
+    }
+
+    func testServiceUnavailableRespectsServerDelayThenBypassesNormalInterval() {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let error = NSError(
+            domain: CKError.errorDomain,
+            code: CKError.Code.serviceUnavailable.rawValue,
+            userInfo: [CKErrorRetryAfterKey: 42]
+        )
+        var state = CloudQuotaSampleSyncState.empty
+        state.isCaughtUp = true
+        state.lastSuccessfulSyncAt = now
+
+        CloudQuotaSampleSyncPolicy.apply(error: error, now: now, to: &state)
+
+        XCTAssertEqual(state.nextAllowedSyncAt, now.addingTimeInterval(42))
+        XCTAssertFalse(CloudQuotaSampleSyncPolicy.shouldRunSync(state: state, now: now.addingTimeInterval(41)))
+        XCTAssertTrue(CloudQuotaSampleSyncPolicy.shouldRunSync(state: state, now: now.addingTimeInterval(42)))
+    }
+
     func testStatusShowsRateLimitedWhenRetryIsFuture() {
         let now = Date(timeIntervalSince1970: 1_000)
         let retryAt = now.addingTimeInterval(60)

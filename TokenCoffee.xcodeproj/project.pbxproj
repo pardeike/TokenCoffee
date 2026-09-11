@@ -19,11 +19,13 @@
 		35C9CF774A7FB502783FF2E7 /* PowerSessionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A87F5169748A0C16D4D0CDB /* PowerSessionControllerTests.swift */; };
 		3E08268887962E15BA3EC719 /* CodexRateLimits.swift in Sources */ = {isa = PBXBuildFile; fileRef = 585D418045E05CB60309C257 /* CodexRateLimits.swift */; };
 		40E2BA4DD4D75AFB6944C3BD /* CloudQuotaSampleSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B3455110B07773BD008152F /* CloudQuotaSampleSyncService.swift */; };
+		508266AE83ABD8A5EE7C5EE1 /* CloudQuotaSampleChangeFetcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE9AB22617E7E48EC12FD68B /* CloudQuotaSampleChangeFetcherTests.swift */; };
 		5F8B824632F773670096F725 /* TokenCoffeeCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = EA274434F4C69B881FDBF2F8 /* TokenCoffeeCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		63AF7785FCD089F10EA5502F /* AppKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DED6C0470DD8DB198B0BEE63 /* AppKit.framework */; };
 		64786A8E17AFA9731AAC8FA8 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 05C4EE8DAEAA52B72DE45C53 /* AppIcon.icon */; };
 		6E115AF5843D6BF7B2122ADE /* QuotaSampleStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DA74698DE04A93251183750 /* QuotaSampleStoreTests.swift */; };
 		6E7AEB39C0022DE3B6F46307 /* CloudQuotaSampleSyncPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB3FDD37C3C09807AF107293 /* CloudQuotaSampleSyncPolicyTests.swift */; };
+		704E182BB2E05B338E5591EB /* CloudQuotaSampleChangeFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FFFBBF75F8DB6769CDE5D92 /* CloudQuotaSampleChangeFetcher.swift */; };
 		73DFCAB56F1E5BC3711299A8 /* StatusIconOff.png in Resources */ = {isa = PBXBuildFile; fileRef = 1197BE68CBCE1F6FF43ECD29 /* StatusIconOff.png */; };
 		782DF07C136C4F581ECA7B11 /* ClamshellFailSafeInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47CD5B392D5E17EE62E5BD77 /* ClamshellFailSafeInstaller.swift */; };
 		79E2C201F1E8A12C21E9CA77 /* PowerSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE7AD1A297019BC7C543926B /* PowerSessionController.swift */; };
@@ -127,6 +129,7 @@
 		46FE874DDEA88FC2F9EFE910 /* ScreenBlankingController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenBlankingController.swift; sourceTree = "<group>"; };
 		47CD5B392D5E17EE62E5BD77 /* ClamshellFailSafeInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClamshellFailSafeInstaller.swift; sourceTree = "<group>"; };
 		4BF37D1C9A2022A96BDB852C /* CloudKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CloudKit.framework; path = System/Library/Frameworks/CloudKit.framework; sourceTree = SDKROOT; };
+		4FFFBBF75F8DB6769CDE5D92 /* CloudQuotaSampleChangeFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudQuotaSampleChangeFetcher.swift; sourceTree = "<group>"; };
 		51C0934867DC2651DF30D12A /* QuotaForecastKitAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaForecastKitAdapter.swift; sourceTree = "<group>"; };
 		5645DB2AF14015C9B891D4FD /* CodexNativeSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexNativeSupport.swift; sourceTree = "<group>"; };
 		585D418045E05CB60309C257 /* CodexRateLimits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexRateLimits.swift; sourceTree = "<group>"; };
@@ -143,6 +146,7 @@
 		95407346610322E866CF3FAE /* QuotaGraphPerceptualPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaGraphPerceptualPalette.swift; sourceTree = "<group>"; };
 		AA43224604BB416301D09F6A /* QuotaForecastDiagnosticExporterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaForecastDiagnosticExporterTests.swift; sourceTree = "<group>"; };
 		AB49006602A950ADB340B435 /* Token Coffee.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Token Coffee.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		AE9AB22617E7E48EC12FD68B /* CloudQuotaSampleChangeFetcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudQuotaSampleChangeFetcherTests.swift; sourceTree = "<group>"; };
 		B0C5145E0C5927208B1F27B7 /* TokenCoffee.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TokenCoffee.entitlements; sourceTree = "<group>"; };
 		B9379B3F3A2D1BCF2F4898B7 /* CodexNativeUsageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexNativeUsageService.swift; sourceTree = "<group>"; };
 		B9BD5D8879BE323DD853C8A3 /* QuotaSampleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaSampleStore.swift; sourceTree = "<group>"; };
@@ -206,6 +210,7 @@
 				03220F6952C7B17BBAB884B2 /* AppDelegate.swift */,
 				05C4EE8DAEAA52B72DE45C53 /* AppIcon.icon */,
 				309606A2AD4618DE1244CDB8 /* AppModel.swift */,
+				4FFFBBF75F8DB6769CDE5D92 /* CloudQuotaSampleChangeFetcher.swift */,
 				1B3455110B07773BD008152F /* CloudQuotaSampleSyncService.swift */,
 				B9C3187BF6FB3997BBC1E839 /* DashboardView.swift */,
 				E27E4F4CA638E9727B0FD9D7 /* Info.plist */,
@@ -288,6 +293,7 @@
 		B8F693B2999468C4E1EC6CEC /* TokenCoffeeAppTests */ = {
 			isa = PBXGroup;
 			children = (
+				AE9AB22617E7E48EC12FD68B /* CloudQuotaSampleChangeFetcherTests.swift */,
 				CB3FDD37C3C09807AF107293 /* CloudQuotaSampleSyncPolicyTests.swift */,
 				6A4C0A69DDF7D0BA76AECBF1 /* QuotaGraphDisplaySamplerTests.swift */,
 				DEF3C982EB7C356F4B4B31B1 /* QuotaGraphPerceptualPaletteTests.swift */,
@@ -473,6 +479,7 @@
 			files = (
 				EDF6297C87A0CD2D53938697 /* AppDelegate.swift in Sources */,
 				8E44467D7F4FC5A0FB92A3BF /* AppModel.swift in Sources */,
+				704E182BB2E05B338E5591EB /* CloudQuotaSampleChangeFetcher.swift in Sources */,
 				40E2BA4DD4D75AFB6944C3BD /* CloudQuotaSampleSyncService.swift in Sources */,
 				12E041F3B81610E4C9B4E708 /* DashboardView.swift in Sources */,
 				E8B65880477127AA57C600D0 /* PanelControlMenu.swift in Sources */,
@@ -489,6 +496,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				508266AE83ABD8A5EE7C5EE1 /* CloudQuotaSampleChangeFetcherTests.swift in Sources */,
 				6E7AEB39C0022DE3B6F46307 /* CloudQuotaSampleSyncPolicyTests.swift in Sources */,
 				0BA7A7B1F9D98874A525D338 /* QuotaGraphDisplaySamplerTests.swift in Sources */,
 				9E224909D842565747B0B742 /* QuotaGraphPerceptualPaletteTests.swift in Sources */,

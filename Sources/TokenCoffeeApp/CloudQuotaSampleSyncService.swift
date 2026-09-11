@@ -4,7 +4,7 @@ import OSLog
 import Security
 import TokenCoffeeCore
 
-private let cloudSyncLogger = Logger(
+let cloudSyncLogger = Logger(
     subsystem: Bundle.main.bundleIdentifier ?? "com.pardeike.TokenCoffee",
     category: "CloudSync"
 )
@@ -21,15 +21,9 @@ actor CloudQuotaSampleSyncService {
             zoneName: recordZoneName,
             ownerName: CKCurrentUserDefaultName
         )
-        static let normalSyncInterval: TimeInterval = 15 * 60
-        static let catchUpSyncInterval: TimeInterval = 5 * 60
-        static let transientRetryInterval: TimeInterval = 5 * 60
         static let zoneChangesResultsLimit = 400
-        static let caughtUpPageLimit = 1
-        static let catchUpPageLimit = 2
         static let cleanupBatchSize = 100
         static let recoveryUploadBatchSize = 200
-        static let cleanupInterval: TimeInterval = 15 * 60
         static let legacyDefaultZonePageLimit = 2
     }
 
@@ -53,8 +47,9 @@ actor CloudQuotaSampleSyncService {
         currentSnapshot: RateLimitSnapshot? = nil
     ) async -> QuotaSampleSyncOutcome {
         let now = Date()
+        var state = stateStore.load()
         let localCandidates = QuotaSampleStore.mergedSamples(
-            localSamples,
+            localSamples + (state.cachedSamples ?? []),
             policy: retentionPolicy,
             now: now
         )
@@ -66,7 +61,6 @@ actor CloudQuotaSampleSyncService {
             return QuotaSampleSyncOutcome(samples: normalizedLocalSamples, status: .localOnly)
         }
 
-        var state = stateStore.load()
         let cleanupContext = CloudQuotaSampleCleanupContext(snapshot: currentSnapshot, now: now)
         if let retryAt = state.nextAllowedSyncAt,
            retryAt > now {
@@ -85,6 +79,8 @@ actor CloudQuotaSampleSyncService {
             )
         }
 
+        var committedState = state
+        var availableSamples = normalizedLocalSamples
         state.lastUploadedSampleCapturedAt = CloudQuotaSampleSyncPolicy.initialUploadWatermark(
             existing: state.lastUploadedSampleCapturedAt,
             localSamples: normalizedLocalSamples
@@ -113,6 +109,21 @@ actor CloudQuotaSampleSyncService {
             cloudSyncLogger.info(
                 "Cloud quota sync fetched changes; remoteRecords=\(fetchedRemoteRecords.count, privacy: .public) decodedSamples=\(fetchedRemoteSamples.count, privacy: .public) indexedRemoteSamples=\(state.remoteSamplesByRecordName.count, privacy: .public) caughtUp=\(state.isCaughtUp, privacy: .public)"
             )
+
+            // Downloading and uploading are separate checkpoints. Persist the
+            // received history with its cursor before any later operation can fail.
+            // Keep un-compacted evidence here for continuity confirmation on replay.
+            let downloadedCandidates = QuotaSampleStore.mergedSamples(
+                localCandidates + fetchedRemoteSamples,
+                policy: retentionPolicy,
+                now: now
+            )
+            availableSamples = QuotaSampleStore.compactedSamples(
+                QuotaSnapshotContinuityPolicy.repairedSamples(downloadedCandidates)
+            )
+            state.cachedSamples = downloadedCandidates
+            try stateStore.save(state)
+            committedState = state
 
             let samplesToUpload = CloudQuotaSampleSyncPolicy.samplesToUpload(
                 localSamples: normalizedLocalSamples,
@@ -191,10 +202,14 @@ actor CloudQuotaSampleSyncService {
                 }
             }
 
-            state.lastSuccessfulSyncAt = now
+            state.lastSuccessfulSyncAt = Date()
             state.nextAllowedSyncAt = nil
             state.nextAllowedSyncReason = nil
-            try? stateStore.save(state)
+            // Commit the cursor and its history atomically. The caller's JSONL write
+            // may fail, or the app may terminate before it happens; replay this cache
+            // on the next run so an advanced cursor can never skip downloaded data.
+            state.cachedSamples = mergedSamples
+            try stateStore.save(state)
 
             cloudSyncLogger.info(
                 "Cloud quota sync finished; mergedSamples=\(mergedSamples.count, privacy: .public) indexedRemoteSamples=\(state.remoteSamplesByRecordName.count, privacy: .public) caughtUp=\(state.isCaughtUp, privacy: .public)"
@@ -204,14 +219,18 @@ actor CloudQuotaSampleSyncService {
                 status: CloudQuotaSampleSyncPolicy.status(for: state, now: now)
             )
         } catch {
-            CloudQuotaSampleSyncPolicy.apply(error: error, now: now, to: &state)
+            // Roll back only uncommitted work. Downloads checkpointed before an
+            // upload/cleanup failure remain available, with their cursor intact.
+            state = committedState
+            let failedAt = Date()
+            CloudQuotaSampleSyncPolicy.apply(error: error, now: failedAt, to: &state)
             try? stateStore.save(state)
             cloudSyncLogger.error(
                 "Cloud quota sync failed; error=\(error.localizedDescription, privacy: .public) retryAt=\(String(describing: state.nextAllowedSyncAt), privacy: .public)"
             )
             return QuotaSampleSyncOutcome(
-                samples: normalizedLocalSamples,
-                status: CloudQuotaSampleSyncPolicy.status(for: error, state: state, now: now)
+                samples: availableSamples,
+                status: CloudQuotaSampleSyncPolicy.status(for: error, state: state, now: failedAt)
             )
         }
     }
@@ -274,51 +293,39 @@ actor CloudQuotaSampleSyncService {
         database: CKDatabase,
         state: inout CloudQuotaSampleSyncState
     ) async throws -> [CloudQuotaSampleRemoteRecord] {
-        var token = Self.changeToken(from: state.zoneChangeTokenData)
-        var fetchedRecords: [CloudQuotaSampleRemoteRecord] = []
-        var moreComing = false
-        let pageLimit = state.isCaughtUp ? Defaults.caughtUpPageLimit : Defaults.catchUpPageLimit
-
-        for _ in 0..<pageLimit {
+        let result = try await CloudQuotaSampleChangeFetcher.fetch(state: state) { tokenData in
+            let token = Self.changeToken(from: tokenData)
             let response = try await database.recordZoneChanges(
                 inZoneWith: Defaults.recordZoneID,
                 since: token,
                 desiredKeys: CloudQuotaSampleRecord.desiredKeys,
                 resultsLimit: Defaults.zoneChangesResultsLimit
             )
-
+            if response.moreComing, let token, token.isEqual(response.changeToken) {
+                throw CloudQuotaSampleChangeFetchError.noProgress
+            }
+            var records: [CloudQuotaSampleRemoteRecord] = []
             for (recordID, result) in response.modificationResultsByID {
-                let modification = try result.get()
-                let record = modification.record
+                let record = try result.get().record
                 guard record.recordType == CloudQuotaSampleRecord.recordType else {
                     continue
                 }
-                let sample = CloudQuotaSampleRecord.sample(from: record)
-                let remoteRecord = CloudQuotaSampleRemoteRecord(recordID: recordID, sample: sample)
-                fetchedRecords.append(remoteRecord)
-                state.remoteSamplesByRecordName[recordID.recordName] = CloudQuotaSampleRemoteMetadata(
-                    recordName: recordID.recordName,
-                    sample: sample
-                )
+                records.append(CloudQuotaSampleRemoteRecord(
+                    recordID: recordID,
+                    sample: CloudQuotaSampleRecord.sample(from: record)
+                ))
             }
-
-            for deletion in response.deletions where deletion.recordType == CloudQuotaSampleRecord.recordType {
-                state.remoteSamplesByRecordName.removeValue(forKey: deletion.recordID.recordName)
-            }
-
-            token = response.changeToken
-            state.zoneChangeTokenData = try Self.archivedData(for: response.changeToken)
-            moreComing = response.moreComing
-            cloudSyncLogger.debug(
-                "Cloud quota zone-change page fetched; modifications=\(response.modificationResultsByID.count, privacy: .public) deletions=\(response.deletions.count, privacy: .public) moreComing=\(moreComing, privacy: .public)"
+            return CloudQuotaSampleChangePage(
+                records: records,
+                deletedRecordNames: response.deletions
+                    .filter { $0.recordType == CloudQuotaSampleRecord.recordType }
+                    .map { $0.recordID.recordName },
+                tokenData: try Self.archivedData(for: response.changeToken),
+                moreComing: response.moreComing
             )
-            if !moreComing {
-                break
-            }
         }
-
-        state.isCaughtUp = !moreComing
-        return fetchedRecords
+        state = result.state
+        return result.records
     }
 
     private func scanLegacyDefaultZone(
@@ -499,6 +506,8 @@ struct CloudQuotaSampleSyncState: Codable, Equatable, Sendable {
     var lastLegacyDefaultZoneScanAt: Date?
     var legacyDefaultZoneCompletedWindowStartDate: Date?
     var remoteSamplesByRecordName: [String: CloudQuotaSampleRemoteMetadata]
+    // Optional for compatibility with state files written by 1.0.5 and earlier.
+    var cachedSamples: [QuotaSample]?
 
     static let empty = CloudQuotaSampleSyncState(
         zoneChangeTokenData: nil,
@@ -519,6 +528,7 @@ enum CloudQuotaSampleSyncBackoffReason: String, Codable, Equatable, Sendable {
     case rateLimited
     case transientFailure
     case changeTokenReset
+    case stalled
 }
 
 struct CloudQuotaSampleSyncStateStore: Sendable {
@@ -606,7 +616,7 @@ struct CloudQuotaSampleCleanupContext: Equatable, Sendable {
 
 enum CloudQuotaSampleSyncPolicy {
     private static let normalSyncInterval: TimeInterval = 15 * 60
-    private static let catchUpSyncInterval: TimeInterval = 5 * 60
+    private static let changeTokenRetryInterval: TimeInterval = 5 * 60
     private static let cleanupInterval: TimeInterval = 15 * 60
     private static let cleanupCatchUpInterval: TimeInterval = 2 * 60
     private static let transientRetryInterval: TimeInterval = 5 * 60
@@ -616,7 +626,12 @@ enum CloudQuotaSampleSyncPolicy {
         cleanupContext: CloudQuotaSampleCleanupContext? = nil,
         now: Date
     ) -> Bool {
-        guard let lastSuccessfulSyncAt = state.lastSuccessfulSyncAt else {
+        if let retryAt = state.nextAllowedSyncAt {
+            return now >= retryAt
+        }
+        // Continue an unfinished burst at the next quota refresh (normally one
+        // minute), including old installations already marked as catching up.
+        guard state.isCaughtUp, let lastSuccessfulSyncAt = state.lastSuccessfulSyncAt else {
             return true
         }
         let interval = syncInterval(state: state, cleanupContext: cleanupContext)
@@ -664,9 +679,6 @@ enum CloudQuotaSampleSyncPolicy {
         state: CloudQuotaSampleSyncState,
         cleanupContext: CloudQuotaSampleCleanupContext?
     ) -> TimeInterval {
-        guard state.isCaughtUp else {
-            return catchUpSyncInterval
-        }
         if let cleanupContext,
            hasPendingCleanupWork(state: state, context: cleanupContext) {
             return cleanupCatchUpInterval
@@ -810,11 +822,16 @@ enum CloudQuotaSampleSyncPolicy {
     }
 
     static func apply(error: Error, now: Date, to state: inout CloudQuotaSampleSyncState) {
+        if error as? CloudQuotaSampleChangeFetchError == .noProgress {
+            state.nextAllowedSyncAt = now.addingTimeInterval(transientRetryInterval)
+            state.nextAllowedSyncReason = .stalled
+            return
+        }
         if error.isCloudKitChangeTokenExpired {
             state.zoneChangeTokenData = nil
             state.remoteSamplesByRecordName = [:]
             state.isCaughtUp = false
-            state.nextAllowedSyncAt = now.addingTimeInterval(catchUpSyncInterval)
+            state.nextAllowedSyncAt = now.addingTimeInterval(changeTokenRetryInterval)
             state.nextAllowedSyncReason = .changeTokenReset
             return
         }
@@ -857,6 +874,8 @@ enum CloudQuotaSampleSyncPolicy {
                 return .rateLimited(retryAt)
             case .changeTokenReset:
                 return .failed("CloudKit sync state reset; retrying")
+            case .stalled:
+                return .failed(CloudQuotaSampleChangeFetchError.noProgress.localizedDescription)
             case .transientFailure, nil:
                 return .failed("CloudKit temporarily unavailable; retrying")
             }
@@ -882,7 +901,7 @@ enum CloudQuotaSampleSyncPolicy {
     }
 }
 
-private struct CloudQuotaSampleRemoteRecord: Sendable {
+struct CloudQuotaSampleRemoteRecord: Sendable {
     let recordID: CKRecord.ID
     let sample: QuotaSample?
 
