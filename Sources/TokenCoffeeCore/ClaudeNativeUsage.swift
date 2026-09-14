@@ -132,14 +132,14 @@ enum NativeUsage {
               let account = object["account"] as? [String: Any],
               let organization = object["organization"] as? [String: Any],
               let organizationID = organization["uuid"] as? String,
-              UUID(uuidString: organizationID) != nil,
-              let member = account["uuid"] as? String, UUID(uuidString: member) != nil,
+              let member = account["uuid"] as? String,
+              let identity = UsageHistoryContract.claudeIdentity(organizationID: organizationID, accountID: member),
               let email = (account["email"] ?? account["email_address"] ?? account["emailAddress"]) as? String,
               !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw Failure(diagnostic: "profile_identity_unavailable")
         }
         // Organization plus member: do not merge different members of a shared organization.
-        return Profile(identity: organizationID.lowercased() + ":" + member.lowercased(), email: email)
+        return Profile(identity: identity, email: email)
     }
 
     static func fetchAccount(profilePath: String, expectedIdentity: String?) async throws -> (Profile, [String]) {

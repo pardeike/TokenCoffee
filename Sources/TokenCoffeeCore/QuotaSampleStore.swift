@@ -476,7 +476,7 @@ public struct QuotaSnapshotContinuityPolicy: Sendable {
     }
 
     private static let usageTolerance = 0.001
-    private static let resetTolerance: TimeInterval = 5
+    private static let resetTolerance = UsageHistoryContract.resetTolerance
     private static let scheduledResetGrace: TimeInterval = 60
     fileprivate static let requiredIncreaseConfirmationCount = 2
 }

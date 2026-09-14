@@ -56,6 +56,10 @@
 - Restore saved account diagrams before network reads and mark them cached/stale.
   Maintain continuity confirmation per account and scope before publishing new
   readings. Pending browser authorization must not stop unrelated account reads.
+- UsageHistoryContract.swift defines reset matching and canonical Claude identity
+  for read-only history consumers. BrrainzTools vendors this file and its tests;
+  update both together and run its verification with TOKENCOFFEE_SOURCE_DIRECTORY.
+  Consumers must match provider identity and scope, never an email or list position.
 - Account removal is confirmed and keeps predictors/history for reassignment.
   Predictor removal must never remove accounts or history.
 - Use a single dashboard for overview, chart detail and About, with clickable

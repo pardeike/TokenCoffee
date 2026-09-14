@@ -116,6 +116,13 @@ is preserved rather than silently assigned to an account. The original Codex acc
 still mirrors its scoped history to the local legacy file for existing consumers,
 archiving that file once before replacement. No credentials are stored in CloudKit.
 
+Read-only consumers such as BrrainzTools use `UsageHistoryContract.swift` for
+five-second reset matching and Claude organization/account UUID normalization.
+BrrainzTools vendors that file and its tests, so it builds independently; its
+`TOKENCOFFEE_SOURCE_DIRECTORY=/path/to/TokenCoffee Scripts/verify.sh` workflow
+checks parity when updating both projects. A matching account and limit are required
+before matching reset timestamps. The history JSONL schema is unchanged.
+
 ### Retained prototype
 
 Prototype source, artifacts and data are retained until the normal app is accepted.

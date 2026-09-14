@@ -12,6 +12,7 @@
 		0BA7A7B1F9D98874A525D338 /* QuotaGraphDisplaySamplerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A4C0A69DDF7D0BA76AECBF1 /* QuotaGraphDisplaySamplerTests.swift */; };
 		0C15E52FD1902DB7FA703830 /* DemoQuotaData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B3756373D0D6077E854F92B /* DemoQuotaData.swift */; };
 		12E041F3B81610E4C9B4E708 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9C3187BF6FB3997BBC1E839 /* DashboardView.swift */; };
+		1BD42322C0F2C6CCD90C0D0A /* UsageHistoryContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 757993D7D46259786143DCF2 /* UsageHistoryContractTests.swift */; };
 		21ADF75E3957F4E7088BA3CC /* StatusIconOn.png in Resources */ = {isa = PBXBuildFile; fileRef = 1CF9443B6D4E2EFED9B5C7F1 /* StatusIconOn.png */; };
 		27108E628CABE879C06A14DB /* DemoQuotaDataTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA05C00E283A5DDB994354D0 /* DemoQuotaDataTests.swift */; };
 		2CC861C421981151667D0BA0 /* QuotaProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B979C5E6EF8FA47C090C81A /* QuotaProjection.swift */; };
@@ -76,6 +77,7 @@
 		E80AC25F5C32E65DEAE0E6F5 /* QuotaSampleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9BD5D8879BE323DD853C8A3 /* QuotaSampleStore.swift */; };
 		E82469BAB12E28BDC500BD39 /* PredictorTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F1D37C9C19AC4DEAEF52EB3 /* PredictorTable.swift */; };
 		E8B65880477127AA57C600D0 /* PanelControlMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F723B70B68EC1ABF330D3EB /* PanelControlMenu.swift */; };
+		E924123A202D4B5E1722B045 /* UsageHistoryContract.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65B8B7610B1097BA89121053 /* UsageHistoryContract.swift */; };
 		EAAC7AC1FA3F2B2D8DEF6D91 /* Predictor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 646DD7C7E8BBF73339ABFD07 /* Predictor.swift */; };
 		EC01D5842E2837D1C4352CB7 /* CodexNativeAuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB555D4794B9843BAFE1F925 /* CodexNativeAuthService.swift */; };
 		EDF6297C87A0CD2D53938697 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03220F6952C7B17BBAB884B2 /* AppDelegate.swift */; };
@@ -167,11 +169,13 @@
 		5645DB2AF14015C9B891D4FD /* CodexNativeSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexNativeSupport.swift; sourceTree = "<group>"; };
 		585D418045E05CB60309C257 /* CodexRateLimits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexRateLimits.swift; sourceTree = "<group>"; };
 		646DD7C7E8BBF73339ABFD07 /* Predictor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Predictor.swift; sourceTree = "<group>"; };
+		65B8B7610B1097BA89121053 /* UsageHistoryContract.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageHistoryContract.swift; sourceTree = "<group>"; };
 		66000B9ACB41BED799FD3273 /* CodexRateLimitDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexRateLimitDecodingTests.swift; sourceTree = "<group>"; };
 		6883568B9B4D7788C355A7C3 /* LinkedAccountRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkedAccountRegistry.swift; sourceTree = "<group>"; };
 		6A4C0A69DDF7D0BA76AECBF1 /* QuotaGraphDisplaySamplerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaGraphDisplaySamplerTests.swift; sourceTree = "<group>"; };
 		6CC1E1C3C4E9767072298590 /* LinkedAccountAuthentication.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkedAccountAuthentication.swift; sourceTree = "<group>"; };
 		7177466CEF89C89EC8B61148 /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = System/Library/Frameworks/IOKit.framework; sourceTree = SDKROOT; };
+		757993D7D46259786143DCF2 /* UsageHistoryContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageHistoryContractTests.swift; sourceTree = "<group>"; };
 		78DC4B26FEA8A020F3BB30F9 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		7C67FC4BF9CD55BCA3C7BCA4 /* LinkedUsageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkedUsageService.swift; sourceTree = "<group>"; };
 		862401FDB58B5CDC84ECB28E /* Charts.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Charts.framework; path = System/Library/Frameworks/Charts.framework; sourceTree = SDKROOT; };
@@ -302,6 +306,7 @@
 				AA43224604BB416301D09F6A /* QuotaForecastDiagnosticExporterTests.swift */,
 				8DD2CB6475B3CDD7A446F041 /* QuotaProjectionTests.swift */,
 				1DA74698DE04A93251183750 /* QuotaSampleStoreTests.swift */,
+				757993D7D46259786143DCF2 /* UsageHistoryContractTests.swift */,
 			);
 			name = TokenCoffeeCoreTests;
 			path = Tests/TokenCoffeeCoreTests;
@@ -392,6 +397,7 @@
 				51C0934867DC2651DF30D12A /* QuotaForecastKitAdapter.swift */,
 				8B979C5E6EF8FA47C090C81A /* QuotaProjection.swift */,
 				B9BD5D8879BE323DD853C8A3 /* QuotaSampleStore.swift */,
+				65B8B7610B1097BA89121053 /* UsageHistoryContract.swift */,
 			);
 			name = TokenCoffeeCore;
 			path = Sources/TokenCoffeeCore;
@@ -615,6 +621,7 @@
 				7B8215A57DAF6D5DA899DEF9 /* QuotaForecastKitAdapter.swift in Sources */,
 				2CC861C421981151667D0BA0 /* QuotaProjection.swift in Sources */,
 				E80AC25F5C32E65DEAE0E6F5 /* QuotaSampleStore.swift in Sources */,
+				E924123A202D4B5E1722B045 /* UsageHistoryContract.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -631,6 +638,7 @@
 				A56C8CB7F9105F199C4317FE /* QuotaForecastDiagnosticExporterTests.swift in Sources */,
 				80A592F36647044928B1E6D7 /* QuotaProjectionTests.swift in Sources */,
 				6E115AF5843D6BF7B2122ADE /* QuotaSampleStoreTests.swift in Sources */,
+				1BD42322C0F2C6CCD90C0D0A /* UsageHistoryContractTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
