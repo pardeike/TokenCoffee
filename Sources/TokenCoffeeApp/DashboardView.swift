@@ -471,18 +471,20 @@ struct DashboardView: View {
     }
 }
 
-private struct QuotaGraphView: View {
+struct QuotaGraphView: View {
     let samples: [QuotaSample]
     let projection: QuotaProjection
     let snapshot: RateLimitSnapshot?
     let now: Date
+    var historyColor: Color = .blue
 
     @Environment(\.self) private var environment
 
     var body: some View {
         if let resetDate = projection.weeklyResetDate {
-            let startDate = QuotaHistoryWindow.startDate(resetDate: resetDate)
-            let dayBands = QuotaGraphTimeAxis.dayBands(startDate: startDate, resetDate: resetDate)
+            let startDate = resetDate.addingTimeInterval(-Double(snapshot?.secondary?.windowDurationMins ?? 10_080) * 60)
+            let shortWindow = (snapshot?.secondary?.windowDurationMins ?? 10_080) < 1440
+            let dayBands = shortWindow ? [] : QuotaGraphTimeAxis.dayBands(startDate: startDate, resetDate: resetDate)
             let plotStartDate = dayBands.first?.startDate ?? startDate
             let plotEndDate = dayBands.last?.endDate ?? resetDate
             let palette = QuotaGraphPerceptualPalette(
@@ -556,7 +558,7 @@ private struct QuotaGraphView: View {
                         y: .value("Percent", point.percent),
                         series: .value("Series", point.series)
                     )
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(historyColor)
                     .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                 }
 
@@ -565,7 +567,7 @@ private struct QuotaGraphView: View {
                         x: .value("Time", point.date),
                         y: .value("Percent", point.percent)
                     )
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(historyColor)
                     .symbolSize(12)
                 }
 
@@ -598,7 +600,16 @@ private struct QuotaGraphView: View {
             }
             .chartXScale(domain: plotStartDate ... plotEndDate)
             .chartYScale(domain: 0 ... graphCeiling)
-            .chartXAxis(.hidden)
+            .chartXAxis {
+                if shortWindow {
+                    AxisMarks(values: .stride(by: .hour)) {
+                        AxisGridLine().foregroundStyle(.secondary.opacity(0.2))
+                        AxisValueLabel(format: .dateTime.hour().minute())
+                            .font(.system(size: 9))
+                    }
+                }
+            }
+            .chartXAxis(shortWindow ? .visible : .hidden)
             .chartYAxis {
                 AxisMarks(position: .leading, values: [0, 25, 50, 75, 100]) { value in
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))

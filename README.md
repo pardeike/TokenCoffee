@@ -57,43 +57,68 @@ The footer shows whether quota history is local-only, syncing, synced through iC
 
 ## Build
 
-```sh
-Scripts/build.sh
-```
-
-Unsigned local builds keep CloudKit disabled and use only the local JSONL history. To build with iCloud entitlements, provide a development team:
+### Signed normal app
 
 ```sh
-TOKENCOFFEE_DEVELOPMENT_TEAM=TEAMID Scripts/build.sh
+Scripts/build.sh          # signed build, signature/entitlement verification, real Keychain checks
+Scripts/test.sh           # full signed tests and build verification
+Scripts/build.sh --run    # tests, signed build, one-time data transfer, launch normal app
+Scripts/package-release.sh # same signed workflow, local dist/TokenCoffee.zip
 ```
 
-Optional overrides:
+The canonical workflow always uses Xcode-managed signing and provisioning for
+`com.pardeike.TokenCoffee`, with team `W65292CD8T` by default. There is no unsigned
+or ad-hoc fallback. Every build verifies the signed application identifier and
+sandbox, then runs disposable create/read/update/delete checks in the actual app's
+Keychain. Full logs go to `.build/logs/`; only complete success prints `ok`.
 
-```sh
-TOKENCOFFEE_BUNDLE_ID=com.example.TokenCoffee TOKENCOFFEE_CLOUDKIT_ENVIRONMENT=Development Scripts/build.sh
-```
+The development build is `.build/Normal/Build/Products/Release/Token Coffee.app`.
+It uses the real app identity and container. CloudKit defaults to Development,
+with separate development/production change-token files. Production publishing is
+not part of these commands. The installed App Store bundle is not overwritten.
 
-## Test
+### Accounts and predictors
 
-```sh
-Scripts/test.sh
-```
+Normal startup now uses the adaptive multi-account dashboard and the existing real
+power and screen-blackout controls. The fixed-size Settings window contains
+Accounts and Predictors. Add, rename, relink, refresh or remove accounts there.
+Predictors select an account value, custom name and colour; drag the list to reorder.
+Adding/removing predictors re-evaluates the dashboard layout without shrinking a
+valid user-selected size. Window geometry persists across restarts.
 
-## Package
+Claude supplies independently selectable 5h, General and model-specific limits.
+Model names come from the provider response. Known values persist independently
+of fresh readings and configured predictors, so expired authentication does not
+erase the choices. Missing short-window readings use `--`, not zero.
 
-```sh
-Scripts/package-release.sh
-```
+Claude uses its own browser authorization with a PKCE challenge and a secure
+`code#state` field, following the [independent grant pattern](https://github.com/ipangdz/claudexbar/blob/main/docs/AUTH.md).
+Only profile access is requested. Codex uses native device-code authorization.
+Credentials stay in provider/account-specific Keychain entries. Only the app
+renews its own grants. Relinking verifies identity before replacing credentials.
+Failed cleanup stays queued without preventing unrelated account operations.
 
-The packaged app is written to `dist/TokenCoffee.zip`.
+The first `--run` can transfer the retained prototype's account metadata,
+predictors, known values, layout and scoped history. It never copies private CLI
+directories or credentials and never modifies the prototype container. Imported
+accounts require sign-in; the real app's former Codex login can be adopted when
+its identity matches. Existing normal-app data is not replaced. Removing an account
+keeps its predictors and history; removing a predictor never removes its account.
 
-By default the release package is built unsigned and then ad-hoc signed, which keeps CloudKit disabled. For a CloudKit-capable release package, build with an Apple developer team so Xcode signs the app with the `iCloud.$(PRODUCT_BUNDLE_IDENTIFIER)` container entitlement:
+The original Codex account retains its legacy quota history and sync path. Other
+account/value pairs have independent CloudKit zones keyed by provider identity and
+scope. No credentials are stored in CloudKit.
 
-```sh
-TOKENCOFFEE_DEVELOPMENT_TEAM=TEAMID Scripts/package-release.sh
-```
+### Retained prototype
 
-`CURRENT_PROJECT_VERSION` intentionally stays at `0` in the checked-in project. App Store builds are produced by Xcode Cloud, which assigns and bumps the build number during the cloud archive flow.
+Prototype source, artifacts and data are retained until the normal app is accepted.
+**Do not launch the prototype.** Former prototype launch arguments are rejected.
+Historical design and experiment notes are retained in
+[Scripts/AccountProbe/README.md](Scripts/AccountProbe/README.md).
+The old build workflow is archived there for recovery, not routine execution.
+
+`CURRENT_PROJECT_VERSION` remains `0` locally; Xcode Cloud assigns release build
+numbers. These local commands do not upload, publish or release the app.
 
 ## Runtime Files
 

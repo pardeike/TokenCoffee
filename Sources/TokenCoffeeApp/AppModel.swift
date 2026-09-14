@@ -40,6 +40,7 @@ final class AppModel: ObservableObject {
     private var quotaClientEventTask: Task<Void, Never>?
     private var activeCodexLogin: CodexDeviceCodeLogin?
     private var hasStartedLiveRuntime = false
+    private var managesQuota = true
     private var hasInstalledFailSafe = false
     private var liveStateBeforeDemoMode: AppModelLiveState?
 
@@ -91,8 +92,13 @@ final class AppModel: ObservableObject {
         !codexSignInState.isLoginFlowActive
     }
 
-    func start() {
+    func start(managesQuota: Bool = true) {
+        self.managesQuota = managesQuota
         TokenCoffeeDefaults.setClosedDisplayModeEnabled(false)
+        if !managesQuota {
+            if powerMode != .off { applyPowerConfiguration() }
+            return
+        }
         if isDemoModeEnabled,
            let bundledDemoScenario {
             applyDemoScenario(bundledDemoScenario)
@@ -170,6 +176,7 @@ final class AppModel: ObservableObject {
     }
 
     func refreshQuota() {
+        guard managesQuota else { return }
         guard !isDemoModeEnabled else {
             return
         }

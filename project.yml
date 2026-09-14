@@ -74,7 +74,7 @@ targets:
     info:
       path: Sources/TokenCoffeeApp/Info.plist
       properties:
-        CFBundleIdentifier: com.pardeike.TokenCoffee
+        CFBundleIdentifier: "$(PRODUCT_BUNDLE_IDENTIFIER)"
         CFBundleName: Token Coffee
         CFBundleDisplayName: Token Coffee
         CFBundleIconName: AppIcon

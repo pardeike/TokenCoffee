@@ -17,10 +17,6 @@ struct QuotaSampleSyncOutcome: Sendable {
 actor CloudQuotaSampleSyncService {
     private enum Defaults {
         static let recordZoneName = "QuotaSamples"
-        static let recordZoneID = CKRecordZone.ID(
-            zoneName: recordZoneName,
-            ownerName: CKCurrentUserDefaultName
-        )
         static let normalSyncInterval: TimeInterval = 15 * 60
         static let catchUpSyncInterval: TimeInterval = 5 * 60
         static let transientRetryInterval: TimeInterval = 5 * 60
@@ -35,13 +31,18 @@ actor CloudQuotaSampleSyncService {
 
     private let retentionPolicy: QuotaSampleRetentionPolicy
     private let stateStore: CloudQuotaSampleSyncStateStore
+    private let recordZoneID: CKRecordZone.ID
+    private let includesLegacyZone: Bool
 
     init(
         retentionPolicy: QuotaSampleRetentionPolicy = .standard,
-        stateStore: CloudQuotaSampleSyncStateStore = .defaultStore()
+        stateStore: CloudQuotaSampleSyncStateStore = .defaultStore(),
+        zoneName: String? = nil
     ) {
         self.retentionPolicy = retentionPolicy
         self.stateStore = stateStore
+        self.recordZoneID = CKRecordZone.ID(zoneName: zoneName ?? Defaults.recordZoneName, ownerName: CKCurrentUserDefaultName)
+        self.includesLegacyZone = zoneName == nil
     }
 
     var isConfigured: Bool {
@@ -137,14 +138,14 @@ actor CloudQuotaSampleSyncService {
                     "Cloud quota cleanup evaluated custom zone; cutoff=\(cleanupContext.windowStartDate, privacy: .public) candidates=\(recordNamesToDelete.count, privacy: .public)"
                 )
                 let recordIDsToDelete = recordNamesToDelete.map {
-                    CKRecord.ID(recordName: $0, zoneID: Defaults.recordZoneID)
+                    CKRecord.ID(recordName: $0, zoneID: recordZoneID)
                 }
                 try await applyChanges(saving: [], deleting: recordIDsToDelete, to: database)
                 CloudQuotaSampleSyncPolicy.markDeleted(recordNamesToDelete, at: now, in: &state)
                 cloudSyncLogger.info("Cloud quota cleanup finished custom zone delete batch; deleted=\(recordIDsToDelete.count, privacy: .public)")
             }
 
-            if let cleanupContext,
+            if includesLegacyZone, let cleanupContext,
                CloudQuotaSampleSyncPolicy.shouldRunLegacyDefaultZoneScan(
                 state: state,
                 context: cleanupContext,
@@ -180,7 +181,7 @@ actor CloudQuotaSampleSyncService {
             )
             if rejectedRecordNames.isEmpty == false {
                 let rejectedRecordIDs = rejectedRecordNames.map {
-                    CKRecord.ID(recordName: $0, zoneID: Defaults.recordZoneID)
+                    CKRecord.ID(recordName: $0, zoneID: recordZoneID)
                 }
                 cloudSyncLogger.info(
                     "Cloud quota continuity cleanup deleting rejected samples; count=\(rejectedRecordIDs.count, privacy: .public)"
@@ -230,11 +231,11 @@ actor CloudQuotaSampleSyncService {
 
     private func ensureRecordZoneExists(in database: CKDatabase) async throws {
         do {
-            _ = try await fetchRecordZone(id: Defaults.recordZoneID, from: database)
+            _ = try await fetchRecordZone(id: recordZoneID, from: database)
             cloudSyncLogger.debug("Cloud quota custom zone already exists")
         } catch where error.isCloudKitZoneNotFound {
-            cloudSyncLogger.info("Cloud quota custom zone missing; creating zone \(Defaults.recordZoneName, privacy: .public)")
-            _ = try await saveRecordZone(CKRecordZone(zoneID: Defaults.recordZoneID), to: database)
+            cloudSyncLogger.info("Cloud quota custom zone missing; creating zone \(self.recordZoneID.zoneName, privacy: .public)")
+            _ = try await saveRecordZone(CKRecordZone(zoneID: recordZoneID), to: database)
             cloudSyncLogger.info("Cloud quota custom zone created")
         }
     }
@@ -281,7 +282,7 @@ actor CloudQuotaSampleSyncService {
 
         for _ in 0..<pageLimit {
             let response = try await database.recordZoneChanges(
-                inZoneWith: Defaults.recordZoneID,
+                inZoneWith: recordZoneID,
                 since: token,
                 desiredKeys: CloudQuotaSampleRecord.desiredKeys,
                 resultsLimit: Defaults.zoneChangesResultsLimit
@@ -410,7 +411,7 @@ actor CloudQuotaSampleSyncService {
         deleting recordIDs: [CKRecord.ID],
         to database: CKDatabase
     ) async throws {
-        let records = samples.map { CloudQuotaSampleRecord.record(from: $0, zoneID: Defaults.recordZoneID) }
+        let records = samples.map { CloudQuotaSampleRecord.record(from: $0, zoneID: recordZoneID) }
         try await modify(records: records, deleting: [], in: database)
         try await modify(records: [], deleting: recordIDs, in: database)
     }
@@ -537,8 +538,16 @@ struct CloudQuotaSampleSyncStateStore: Sendable {
             directoryURL = fileManager.temporaryDirectory.appendingPathComponent("TokenCoffee", isDirectory: true)
         }
         return CloudQuotaSampleSyncStateStore(
-            fileURL: directoryURL.appendingPathComponent("quota-cloud-sync-state.json")
+            fileURL: directoryURL.appendingPathComponent(Self.environmentName == "Development"
+                ? "quota-cloud-sync-state-development.json" : "quota-cloud-sync-state.json")
         )
+    }
+
+    static var environmentName: String {
+        guard let task = SecTaskCreateFromSelf(nil),
+              let value = SecTaskCopyValueForEntitlement(task,
+                "com.apple.developer.icloud-container-environment" as CFString, nil) as? String else { return "Development" }
+        return value
     }
 
     func load(fileManager: FileManager = .default) -> CloudQuotaSampleSyncState {

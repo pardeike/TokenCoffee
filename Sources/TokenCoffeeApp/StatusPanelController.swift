@@ -11,7 +11,9 @@ private enum StatusPanelAction {
 
 @MainActor
 final class StatusPanelController: NSObject, NSWindowDelegate {
-    private let model: AppModel
+    private let model: AppModel?
+    private let prototype: DashboardLayoutState?
+    private let linked: LinkedDashboardModel?
     private let statusItem: NSStatusItem
     private let panel: NSPanel
     private var cancellables: Set<AnyCancellable> = []
@@ -19,13 +21,19 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     private var pendingExpandedInterfaceAction: StatusPanelAction?
     private var panelWasFocused = false
     private var ignoreStatusItemActionUntil: Date?
+    private var resizeStartFrame: NSRect?
+    private var restoredPrototypeFrame = false
+    private var applyingPrototypeSize = false
+    private var managementController: ManagementWindowController?
 
-    init(model: AppModel) {
-        self.model = model
+    init(model: AppModel? = nil, prototype: PrototypeModel? = nil, linked: LinkedDashboardModel? = nil) {
+        self.model = model ?? linked?.power
+        self.prototype = prototype ?? linked?.geometry
+        self.linked = linked
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         self.panel = PersistentPanel(
             contentRect: NSRect(x: 0, y: 0, width: 480, height: 272),
-            styleMask: [.borderless],
+            styleMask: prototype == nil && linked == nil ? [.borderless] : [.borderless, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -36,13 +44,14 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
             button.title = ""
             button.imagePosition = .imageOnly
             button.imageScaling = .scaleProportionallyDown
-            updateStatusIcon(for: model.powerMode)
+            updateStatusIcon(for: self.model?.powerMode ?? prototype?.powerMode ?? .off)
             button.target = self
             button.action = #selector(togglePanel)
             installExpandedInterfaceDelegateIfAvailable()
         }
 
-        model.$powerMode
+        if let powerPublisher = self.model?.$powerMode ?? prototype?.$powerMode {
+            powerPublisher
             .dropFirst()
             .sink { [weak self] mode in
                 Task { @MainActor [weak self] in
@@ -50,9 +59,12 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
                 }
             }
             .store(in: &cancellables)
+        }
 
         panel.delegate = self
-        panel.backgroundColor = .clear
+        // Transparent rounded corners otherwise let clicks pass through even while
+        // AppKit displays its native diagonal resize cursor over the window frame.
+        panel.backgroundColor = self.prototype == nil ? .clear : NSColor.black.withAlphaComponent(0.01)
         panel.isOpaque = false
         panel.hasShadow = true
         panel.animationBehavior = .none
@@ -61,7 +73,8 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         panel.hidesOnDeactivate = false
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.contentView = NSHostingView(rootView: DashboardView(
+        if let model {
+            panel.contentView = NSHostingView(rootView: DashboardView(
             model: model,
             closeWindow: { [weak self] in
                 self?.closePanel()
@@ -69,7 +82,146 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
             showAbout: {
                 Self.showAboutPanel()
             }
-        ))
+            ))
+        } else if let geometry = self.prototype {
+            panel.title = linked == nil ? "Token Coffee Prototype" : "Token Coffee"
+            panel.contentMinSize = PrototypeLayout.pocket.size
+            let root: AnyView
+            if let linked {
+                root = AnyView(LinkedDashboardView(model: linked, geometry: geometry,
+                    setLayout: { [weak self] layout in self?.applyPrototypeLayout(layout) },
+                    showManagement: { [weak self] section in self?.showManagement(section) },
+                    close: { [weak self] in self?.closePanel() }))
+            } else if let prototype {
+                root = AnyView(PrototypeDashboardView(model: prototype,
+                    setLayout: { [weak self] layout in self?.applyPrototypeLayout(layout) },
+                    close: { [weak self] in self?.closePanel() }))
+            } else { root = AnyView(EmptyView()) }
+            let hosting = NSHostingView(rootView: root)
+            hosting.sizingOptions = []
+            let content = NSView(frame: NSRect(origin: .zero, size: panel.frame.size))
+            hosting.frame = content.bounds
+            hosting.autoresizingMask = [.width, .height]
+            content.addSubview(hosting)
+            let corners = PrototypeResizeCorners(frame: content.bounds)
+            corners.autoresizingMask = [.width, .height]
+            corners.begin = { [weak self] in
+                self?.windowWillStartLiveResize(Notification(name: NSWindow.willStartLiveResizeNotification))
+            }
+            corners.end = { [weak self] in
+                self?.windowDidEndLiveResize(Notification(name: NSWindow.didEndLiveResizeNotification))
+            }
+            content.addSubview(corners)
+            panel.contentView = content
+            restorePrototypeFrame()
+            geometry.$count.dropFirst().sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self, let prototype = self.prototype else { return }
+                    if self.linked != nil {
+                        let result = PrototypeLayout.resolveCountChange(self.panel.frame.size,
+                            retaining: prototype.layout, count: prototype.count, fitting: self.availablePrototypeSize)
+                        self.applyPrototypeLayout(result.layout, proposedSize: result.size)
+                    } else {
+                        self.applyPrototypeLayout(prototype.layout, proposedSize: self.panel.frame.size)
+                    }
+                }
+            }.store(in: &cancellables)
+        }
+    }
+
+    func showPrototype() { if prototype != nil { openPanel() } }
+    func showDashboard() { openPanel() }
+
+    private func showManagement(_ section: ManagementSection) {
+        guard let linked else { return }
+        if managementController == nil { managementController = ManagementWindowController(model: linked) }
+        managementController?.show(section)
+    }
+
+    func windowWillStartLiveResize(_ notification: Notification) {
+        guard let prototype else { return }
+        resizeStartFrame = panel.frame
+        prototype.previewSize = prototype.windowSize
+        prototype.resizing = true
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        guard let prototype, !applyingPrototypeSize else { return }
+        guard panel.inLiveResize || prototype.resizing else {
+            applyPrototypeLayout(prototype.layout, proposedSize: panel.frame.size)
+            return
+        }
+        let resolution = PrototypeLayout.resolve(panel.frame.size, retaining: prototype.layout, count: prototype.count,
+                                                 fitting: availablePrototypeSize)
+        prototype.layout = resolution.layout
+        prototype.previewSize = resolution.size
+    }
+
+    func windowDidEndLiveResize(_ notification: Notification) {
+        guard let prototype else { return }
+        applyPrototypeLayout(prototype.layout, proposedSize: panel.frame.size)
+        prototype.resizing = false
+        resizeStartFrame = nil
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        guard prototype != nil, !panel.inLiveResize, !applyingPrototypeSize else { return }
+        savePrototypeFrame()
+    }
+
+    private var availablePrototypeSize: CGSize {
+        let frame = (panel.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 900)
+        return CGSize(width: frame.width - 16, height: frame.height - 16)
+    }
+
+    private func applyPrototypeLayout(_ requested: PrototypeLayout, proposedSize: CGSize? = nil) {
+        guard let prototype else { return }
+        let resolution = PrototypeLayout.resolve(proposedSize ?? requested.size, retaining: requested,
+                                                 count: prototype.count, fitting: availablePrototypeSize)
+        var frame = panel.frame
+        let anchor = resizeStartFrame ?? frame
+        let resizingLeft = resizeStartFrame != nil && abs(frame.minX - anchor.minX) > 1
+        let resizingTop = resizeStartFrame != nil && abs(frame.maxY - anchor.maxY) > 1
+        let oldMaxX = frame.maxX
+        let oldMaxY = frame.maxY
+        frame.size = resolution.size
+        if resizingLeft { frame.origin.x = oldMaxX - frame.width }
+        if !resizingTop { frame.origin.y = oldMaxY - frame.height }
+        if let visible = (panel.screen ?? NSScreen.main)?.visibleFrame {
+            frame.origin.x = min(max(frame.minX, visible.minX + 8), visible.maxX - frame.width - 8)
+            frame.origin.y = min(max(frame.minY, visible.minY + 8), visible.maxY - frame.height - 8)
+        }
+        applyingPrototypeSize = true
+        prototype.layout = resolution.layout
+        prototype.windowSize = frame.size
+        prototype.previewSize = frame.size
+        panel.setFrame(frame, display: true, animate: false)
+        applyingPrototypeSize = false
+        savePrototypeFrame()
+    }
+
+    private func savePrototypeFrame() {
+        restoredPrototypeFrame = true
+        UserDefaults.standard.set(NSStringFromRect(panel.frame), forKey: framePrefix + ".windowFrame")
+        UserDefaults.standard.set(prototype?.layout.rawValue, forKey: framePrefix + ".layout")
+    }
+
+    private var framePrefix: String { linked == nil ? "prototype" : "linkedDashboard" }
+
+    private func restorePrototypeFrame() {
+        guard let prototype,
+              let name = UserDefaults.standard.string(forKey: framePrefix + ".layout"),
+              let layout = PrototypeLayout(rawValue: name),
+              let saved = UserDefaults.standard.string(forKey: framePrefix + ".windowFrame") else { return }
+        let frame = NSRectFromString(saved)
+        guard frame.width.isFinite, frame.height.isFinite, frame.minX.isFinite, frame.minY.isFinite,
+              frame.width > 0, frame.height > 0 else { return }
+        applyingPrototypeSize = true
+        panel.setFrame(frame, display: false)
+        applyingPrototypeSize = false
+        prototype.layout = layout
+        restoredPrototypeFrame = true
+        applyPrototypeLayout(layout, proposedSize: frame.size)
     }
 
     @objc private func togglePanel() {
@@ -108,7 +260,8 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         panelWasFocused = false
-        model.setPanelVisible(false)
+        model?.setPanelVisible(false)
+        prototype?.visible = false
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
@@ -149,9 +302,10 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     }
 
     private func openPanel() {
-        positionPanel()
+        if prototype == nil || !restoredPrototypeFrame { positionPanel() }
         focusPanel()
-        model.setPanelVisible(true)
+        model?.setPanelVisible(true)
+        prototype?.visible = true
     }
 
     private func focusPanel() {
@@ -163,7 +317,8 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     private func closePanelWithoutCancellingStatusItem() {
         panelWasFocused = false
         panel.orderOut(nil)
-        model.setPanelVisible(false)
+        model?.setPanelVisible(false)
+        prototype?.visible = false
     }
 
     private func installExpandedInterfaceDelegateIfAvailable() {
