@@ -33,14 +33,14 @@ struct LinkedDashboardView: View {
                             if model.pagePredictors.indices.contains(tile.id) {
                                 let predictor = model.pagePredictors[tile.id]
                                 if let diagram = model.diagram(for: predictor) {
-                                let stale = model.errors[diagram.accountID] != nil || Date().timeIntervalSince(diagram.capturedAt) > 660
+                                let stale = diagram.isCached || model.errors[diagram.accountID] != nil || Date().timeIntervalSince(diagram.capturedAt) > 660
                                 UsageTileView(title: predictor.name, provider: model.provider(diagram), snapshot: diagram.snapshot,
                                     samples: diagram.samples,
                                     projection: QuotaProjectionEngine.make(snapshot: diagram.snapshot, samples: diagram.samples, now: Date()),
                                     now: Date(), kind: tile.kind,
-                                    status: stale ? "Stale · " + diagram.capturedAt.formatted(date: .omitted, time: .shortened) : diagram.syncMessage,
+                                    status: diagram.warning ?? (stale ? "Stale · " + diagram.capturedAt.formatted(date: .omitted, time: .shortened) : nil),
                                     prominent: geometry.layout.followsActivity && tile.id == geometry.primary,
-                                    inspecting: geometry.inspectedAccount != nil, accent: predictor.color.value)
+                                    inspecting: geometry.inspectedAccount != nil, accent: predictor.color.value, syncMessage: diagram.syncMessage)
                                     .frame(width: tile.frame.width, height: tile.frame.height)
                                     .contentShape(Rectangle())
                                     .onTapGesture { geometry.inspect(tile.id) }

@@ -48,9 +48,14 @@
   requires explicit reauthorization rather than copying prototype credentials.
   The normal app may adopt its own previous default Codex login by verified
   provider identity, with only one running owner of token renewal.
-- The former Codex account retains its legacy history/sync path. Other account
-  scopes use distinct CloudKit zones keyed by provider identity and scope,
-  never a shared single-account zone. Secrets never sync through CloudKit.
+- Every account/scope uses a CloudKit zone keyed by provider identity and scope,
+  independent of which Mac adopted it. Never sync through the unowned legacy zone.
+  Preserve unpartitioned history as an archive; do not silently assign it to an
+  account. The former Codex account mirrors verified scoped history to the local
+  legacy consumer file, preserving that file once before replacement. Secrets never sync.
+- Restore saved account diagrams before network reads and mark them cached/stale.
+  Maintain continuity confirmation per account and scope before publishing new
+  readings. Pending browser authorization must not stop unrelated account reads.
 - Account removal is confirmed and keeps predictors/history for reassignment.
   Predictor removal must never remove accounts or history.
 - Use a single dashboard for overview, chart detail and About, with clickable

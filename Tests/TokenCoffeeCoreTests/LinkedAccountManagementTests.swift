@@ -232,6 +232,97 @@ final class LinkedAccountManagementTests: XCTestCase {
         XCTAssertEqual(requests.count, 4)
     }
 
+    @MainActor func testEarlyResetIsConfirmedBeforePublishingOrSyncingAndSurvivesRestart() async throws {
+        let clock = AccountReviewClock()
+        let reference = LinkedCredentialReference(provider: .claude, id: UUID())
+        let account = ProbeAccount(id: UUID(), provider: .claude, name: "Personal", identity: Self.identity, credentialID: reference.id)
+        let directory = try root([account])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let secrets = TestAccountSecrets()
+        try secrets.write(JSONEncoder().encode(ClaudeAccountCredential(accessToken: "test", refreshToken: "test", expiresAt: .distantFuture)), for: reference)
+        let reset = clock.date.addingTimeInterval(100_000)
+        let snapshot = RateLimitSnapshot(limitId: "general", limitName: "General", primary: nil,
+            secondary: RateLimitWindow(usedPercent: 54, windowDurationMins: 10_080, resetsAt: Int(reset.timeIntervalSince1970)),
+            credits: nil, planType: nil, rateLimitReachedType: nil)
+        let hash = SHA256.hash(data: Data("general".utf8)).map { String(format: "%02x", $0) }.joined()
+        let store = QuotaSampleStore(fileURL: directory.appendingPathComponent("diagram-history/\(account.id.uuidString)/\(hash).jsonl"))
+        let baseline = [-120.0, -60.0].compactMap { QuotaSample(snapshot: snapshot, capturedAt: clock.date.addingTimeInterval($0)) }
+        try store.write(baseline)
+        let newReset = ISO8601DateFormatter().string(from: reset.addingTimeInterval(100_000))
+        let usage = "{\"seven_day\":{\"utilization\":0,\"resets_at\":\"\(newReset)\"}}"
+        let http = TestAccountHTTP(Array(repeating: [(200, Self.profile), (200, usage)], count: 3).flatMap { $0 })
+        let sync = AccountReviewSync()
+        let service = try LinkedUsageService(root: directory, secrets: secrets, http: http, historySync: sync, now: { clock.date })
+        for _ in 0..<2 {
+            let pending = try await service.refresh(account.id)
+            XCTAssertEqual(pending.first?.snapshot.secondary?.usedPercent, 54)
+            XCTAssertNotNil(pending.first?.warning)
+            XCTAssertEqual(try store.load().map(\.weeklyUsedPercent), [54, 54])
+            clock.advance(60)
+        }
+        let before = await sync.count
+        XCTAssertEqual(before, 0, "Unconfirmed reset must not drive cloud cleanup or upload")
+        let accepted = try await service.refresh(account.id)
+        XCTAssertEqual(accepted.first?.snapshot.secondary?.usedPercent, 0)
+        XCTAssertNil(accepted.first?.warning)
+        XCTAssertEqual(accepted.first?.samples.filter { $0.weeklyUsedPercent == 0 }.count, 3)
+        let reopened = try LinkedUsageService(root: directory, secrets: secrets, http: TestAccountHTTP([]))
+        let restored = await reopened.cachedDiagrams()
+        XCTAssertEqual(restored.first?.snapshot.secondary?.usedPercent, 0)
+        XCTAssertEqual(try XCTUnwrap(restored.first).capturedAt.timeIntervalSince1970,
+                       try XCTUnwrap(accepted.first).capturedAt.timeIntervalSince1970, accuracy: 1)
+        XCTAssertTrue(restored.first?.isCached == true)
+    }
+
+    @MainActor func testPendingLoginPausesOnlyItsTargetAndExpiresWithoutCommitting() async throws {
+        let clock = AccountReviewClock()
+        let target = ProbeAccount(id: UUID(), provider: .claude, name: "Reconnect", identity: "other:member", requiresSignIn: true)
+        let reference = LinkedCredentialReference(provider: .claude, id: UUID())
+        let other = ProbeAccount(id: UUID(), provider: .claude, name: "Monitor", identity: Self.identity, credentialID: reference.id)
+        let directory = try root([target, other])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let secrets = TestAccountSecrets()
+        try secrets.write(JSONEncoder().encode(ClaudeAccountCredential(accessToken: "test", refreshToken: "test", expiresAt: .distantFuture)), for: reference)
+        let http = TestAccountHTTP([(200, Self.profile), (200, #"{"seven_day":{"utilization":25}}"#)])
+        let service = try LinkedUsageService(root: directory, secrets: secrets, http: http, now: { clock.date })
+        let login = try await service.beginLogin(provider: "Claude", replacing: target.id)
+        let readings = try await service.refresh(other.id)
+        XCTAssertEqual(readings.first?.snapshot.secondary?.usedPercent, 25)
+        do { _ = try await service.refresh(target.id); XCTFail("Read the account being reconnected") }
+        catch LinkedAccountError.busy { }
+        clock.advance(1801)
+        do { _ = try await service.completeLogin(login.id, code: "unused"); XCTFail("Expired grant completed") }
+        catch LinkedAccountError.expiredLogin { }
+        let retry = try await service.beginLogin(provider: "Claude", replacing: target.id)
+        XCTAssertNotEqual(retry.id, login.id)
+        await service.cancelLogin(retry.id)
+        XCTAssertEqual(try registry(directory).accounts.first?.requiresSignIn, true)
+    }
+
+    @MainActor func testLoginCompletionNetworkWaitDoesNotBlockAnotherAccountRead() async throws {
+        let reference = LinkedCredentialReference(provider: .claude, id: UUID())
+        let other = ProbeAccount(id: UUID(), provider: .claude, name: "Monitor", identity: Self.identity, credentialID: reference.id)
+        let directory = try root([other])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let secrets = TestAccountSecrets()
+        try secrets.write(JSONEncoder().encode(ClaudeAccountCredential(accessToken: "test", refreshToken: "test", expiresAt: .distantFuture)), for: reference)
+        let http = SuspendedLoginHTTP(profile: Self.profile)
+        let service = try LinkedUsageService(root: directory, secrets: secrets, http: http)
+        let login = try await service.beginLogin(provider: "Claude")
+        let state = try XCTUnwrap(URLComponents(url: login.url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "state" }?.value)
+        let completion = Task { try await service.completeLogin(login.id, code: "test#" + state) }
+        await http.waitForTokenRequest()
+        // Always release the suspended request, including on an assertion failure.
+        let readings: [LinkedUsageDiagram]?
+        do { readings = try await service.refresh(other.id) }
+        catch { readings = nil; XCTFail("Unrelated read blocked during token exchange: \(error)") }
+        await http.release()
+        XCTAssertEqual(readings?.first?.snapshot.secondary?.usedPercent, 25)
+        do { _ = try await completion.value; XCTFail("Duplicate add should still be rejected") }
+        catch LinkedAccountError.duplicateAccount { }
+        await service.cancelLogin(login.id)
+    }
+
     @MainActor func testWrongClaudeProfileNeverReadsOrAssignsUsage() async throws {
         let root = try root()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -248,6 +339,46 @@ final class LinkedAccountManagementTests: XCTestCase {
 
     private static let identity = "00000000-0000-0000-0000-000000000001:00000000-0000-0000-0000-000000000002"
     private static let profile = #"{"organization":{"uuid":"00000000-0000-0000-0000-000000000001"},"account":{"uuid":"00000000-0000-0000-0000-000000000002","email":"person@example.test"}}"#
+}
+
+private final class AccountReviewClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = Date()
+    var date: Date { lock.withLock { value } }
+    func advance(_ seconds: TimeInterval) { lock.withLock { value.addTimeInterval(seconds) } }
+}
+
+private actor AccountReviewSync: LinkedHistorySync {
+    private(set) var count = 0
+    func sync(account: LinkedUsageAccount, scope: String, samples: [QuotaSample], snapshot: RateLimitSnapshot) async -> LinkedHistorySyncResult {
+        count += 1
+        return LinkedHistorySyncResult(samples: QuotaSampleStore.compactedSamples(QuotaSnapshotContinuityPolicy.repairedSamples(samples)), message: "iCloud synced")
+    }
+}
+
+private actor SuspendedLoginHTTP: CodexHTTPClient {
+    let profile: String
+    private var tokenRequested = false
+    private var waiting: CheckedContinuation<Void, Never>?
+    private var tokenResponse: CheckedContinuation<Void, Never>?
+    init(profile: String) { self.profile = profile }
+    func waitForTokenRequest() async {
+        if !tokenRequested { await withCheckedContinuation { waiting = $0 } }
+    }
+    func release() { tokenResponse?.resume(); tokenResponse = nil }
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let body: String
+        if request.url?.lastPathComponent == "token" {
+            tokenRequested = true
+            await withCheckedContinuation { continuation in
+                tokenResponse = continuation
+                waiting?.resume(); waiting = nil
+            }
+            body = #"{"access_token":"test-access","refresh_token":"test-refresh","expires_in":28800,"scope":"user:profile"}"#
+        } else if request.url?.lastPathComponent == "profile" { body = profile }
+        else { body = #"{"seven_day":{"utilization":25}}"# }
+        return (Data(body.utf8), HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+    }
 }
 
 private final class TestAccountSecrets: LinkedAccountSecrets, @unchecked Sendable {

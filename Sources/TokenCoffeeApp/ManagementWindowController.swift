@@ -214,6 +214,12 @@ private struct AccountManagementView: View {
                             Text("No usage fetched yet. \(account.requiresSignIn ? "Sign in to reconnect this account." : "Use Refresh Usage to fetch current values.")")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
+                        if let warning = model.diagrams.first(where: { $0.accountID == account.id && $0.warning != nil })?.warning {
+                            Text(warning).font(.caption).foregroundStyle(.orange)
+                        }
+                        if let sync = model.diagrams.first(where: { $0.accountID == account.id })?.syncMessage {
+                            Text(sync).font(.caption).foregroundStyle(.secondary)
+                        }
                         if model.sources.filter({ $0.accountID == account.id }).isEmpty {
                             Text("Values are discovered after the first successful usage read.").font(.caption).foregroundStyle(.secondary)
                         }

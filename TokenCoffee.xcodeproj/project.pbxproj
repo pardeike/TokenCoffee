@@ -24,6 +24,7 @@
 		4620D02D7EA1D3E76805E185 /* LinkedAccountAuthentication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CC1E1C3C4E9767072298590 /* LinkedAccountAuthentication.swift */; };
 		4A6EFE8B9E56389DE871E320 /* ClaudeUsageWindowsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F0A1EA7966F893E37B09EE2 /* ClaudeUsageWindowsTests.swift */; };
 		4D3BADB37CF38A644140227C /* LinkedDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEC0E19AB42D025D40F9EAB2 /* LinkedDashboardView.swift */; };
+		508266AE83ABD8A5EE7C5EE1 /* CloudQuotaSampleChangeFetcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE9AB22617E7E48EC12FD68B /* CloudQuotaSampleChangeFetcherTests.swift */; };
 		58829B3D9DC4A2C1626698E5 /* AccountLoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B74643C6D39F9AE55A742819 /* AccountLoginView.swift */; };
 		58A1BC26006F342435087BB5 /* PrototypeDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16924F64216801F47A6E76B2 /* PrototypeDashboardView.swift */; };
 		5F8B824632F773670096F725 /* TokenCoffeeCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = EA274434F4C69B881FDBF2F8 /* TokenCoffeeCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -34,6 +35,7 @@
 		696F057FEB53EF25F5EEF847 /* LinkedDashboardModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBFC353D451F5EC2E85F8BAE /* LinkedDashboardModel.swift */; };
 		6E115AF5843D6BF7B2122ADE /* QuotaSampleStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DA74698DE04A93251183750 /* QuotaSampleStoreTests.swift */; };
 		6E7AEB39C0022DE3B6F46307 /* CloudQuotaSampleSyncPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB3FDD37C3C09807AF107293 /* CloudQuotaSampleSyncPolicyTests.swift */; };
+		704E182BB2E05B338E5591EB /* CloudQuotaSampleChangeFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FFFBBF75F8DB6769CDE5D92 /* CloudQuotaSampleChangeFetcher.swift */; };
 		73DFCAB56F1E5BC3711299A8 /* StatusIconOff.png in Resources */ = {isa = PBXBuildFile; fileRef = 1197BE68CBCE1F6FF43ECD29 /* StatusIconOff.png */; };
 		782DF07C136C4F581ECA7B11 /* ClamshellFailSafeInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47CD5B392D5E17EE62E5BD77 /* ClamshellFailSafeInstaller.swift */; };
 		79E2C201F1E8A12C21E9CA77 /* PowerSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE7AD1A297019BC7C543926B /* PowerSessionController.swift */; };
@@ -160,6 +162,7 @@
 		46FE874DDEA88FC2F9EFE910 /* ScreenBlankingController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenBlankingController.swift; sourceTree = "<group>"; };
 		47CD5B392D5E17EE62E5BD77 /* ClamshellFailSafeInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClamshellFailSafeInstaller.swift; sourceTree = "<group>"; };
 		4BF37D1C9A2022A96BDB852C /* CloudKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CloudKit.framework; path = System/Library/Frameworks/CloudKit.framework; sourceTree = SDKROOT; };
+		4FFFBBF75F8DB6769CDE5D92 /* CloudQuotaSampleChangeFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudQuotaSampleChangeFetcher.swift; sourceTree = "<group>"; };
 		51C0934867DC2651DF30D12A /* QuotaForecastKitAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaForecastKitAdapter.swift; sourceTree = "<group>"; };
 		5645DB2AF14015C9B891D4FD /* CodexNativeSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexNativeSupport.swift; sourceTree = "<group>"; };
 		585D418045E05CB60309C257 /* CodexRateLimits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexRateLimits.swift; sourceTree = "<group>"; };
@@ -183,6 +186,7 @@
 		994056F2FF2CD4F21819B999 /* LinkedHistoryCloudSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkedHistoryCloudSync.swift; sourceTree = "<group>"; };
 		AA43224604BB416301D09F6A /* QuotaForecastDiagnosticExporterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaForecastDiagnosticExporterTests.swift; sourceTree = "<group>"; };
 		AB49006602A950ADB340B435 /* Token Coffee.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Token Coffee.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		AE9AB22617E7E48EC12FD68B /* CloudQuotaSampleChangeFetcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudQuotaSampleChangeFetcherTests.swift; sourceTree = "<group>"; };
 		B0C5145E0C5927208B1F27B7 /* TokenCoffee.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TokenCoffee.entitlements; sourceTree = "<group>"; };
 		B74643C6D39F9AE55A742819 /* AccountLoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountLoginView.swift; sourceTree = "<group>"; };
 		B9379B3F3A2D1BCF2F4898B7 /* CodexNativeUsageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexNativeUsageService.swift; sourceTree = "<group>"; };
@@ -255,6 +259,7 @@
 				03220F6952C7B17BBAB884B2 /* AppDelegate.swift */,
 				05C4EE8DAEAA52B72DE45C53 /* AppIcon.icon */,
 				309606A2AD4618DE1244CDB8 /* AppModel.swift */,
+				4FFFBBF75F8DB6769CDE5D92 /* CloudQuotaSampleChangeFetcher.swift */,
 				1B3455110B07773BD008152F /* CloudQuotaSampleSyncService.swift */,
 				D1F29526A2E9A2F03F0E5976 /* DashboardLayoutState.swift */,
 				B9C3187BF6FB3997BBC1E839 /* DashboardView.swift */,
@@ -353,6 +358,7 @@
 			isa = PBXGroup;
 			children = (
 				26AD6134B6F56D5A3EDC4E0B /* AccountLoginFlowTests.swift */,
+				AE9AB22617E7E48EC12FD68B /* CloudQuotaSampleChangeFetcherTests.swift */,
 				CB3FDD37C3C09807AF107293 /* CloudQuotaSampleSyncPolicyTests.swift */,
 				BB93B10FD3B9AD4108350FC4 /* LinkedDashboardTests.swift */,
 				8DC4ADE50360F5F74901E6D8 /* PrototypeTests.swift */,
@@ -546,6 +552,7 @@
 				58829B3D9DC4A2C1626698E5 /* AccountLoginView.swift in Sources */,
 				EDF6297C87A0CD2D53938697 /* AppDelegate.swift in Sources */,
 				8E44467D7F4FC5A0FB92A3BF /* AppModel.swift in Sources */,
+				704E182BB2E05B338E5591EB /* CloudQuotaSampleChangeFetcher.swift in Sources */,
 				40E2BA4DD4D75AFB6944C3BD /* CloudQuotaSampleSyncService.swift in Sources */,
 				9D55BA3687C424E7132C2044 /* DashboardLayoutState.swift in Sources */,
 				12E041F3B81610E4C9B4E708 /* DashboardView.swift in Sources */,
@@ -576,6 +583,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E0A10A3C6C8509244B4780EC /* AccountLoginFlowTests.swift in Sources */,
+				508266AE83ABD8A5EE7C5EE1 /* CloudQuotaSampleChangeFetcherTests.swift in Sources */,
 				6E7AEB39C0022DE3B6F46307 /* CloudQuotaSampleSyncPolicyTests.swift in Sources */,
 				9BDA67BBA82A798EE5E580B4 /* LinkedDashboardTests.swift in Sources */,
 				826434CC92F172884EA81761 /* PrototypeTests.swift in Sources */,
@@ -750,7 +758,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.5;
+				MARKETING_VERSION = 1.0.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pardeike.TokenCoffee;
 				PRODUCT_NAME = "Token Coffee";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -925,7 +933,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.5;
+				MARKETING_VERSION = 1.0.6;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pardeike.TokenCoffee;
 				PRODUCT_NAME = "Token Coffee";
 				PROVISIONING_PROFILE_SPECIFIER = "";

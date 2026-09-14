@@ -53,7 +53,7 @@ When either awake mode is active, closing the lid should not put the Mac to slee
 
 The graph shows complete fixed 24-hour bands anchored to the first local midnight before the seven-day quota window. The usable window starts with a light band and then alternates at each 24-hour boundary. Orange activity markers use equal OKLab distance from the light or dark band beneath them, keeping their perceived contrast balanced while preserving the day pattern. The portions before that window and after the renewal deadline are shaded near-black, and the red 100% guide is limited to the usable window. Yellow is the current forecast, red is the over-limit portion, and the red vertical bar is the renew deadline.
 
-The footer shows whether quota history is local-only, syncing, synced through iCloud, paused by CloudKit rate limiting, or temporarily unavailable.
+The Accounts editor and chart tooltip show history sync status. Chart colours and footers remain reserved for allowance, pace and stale-reading warnings.
 
 ## Build
 
@@ -97,6 +97,10 @@ Only profile access is requested. Codex uses native device-code authorization.
 Credentials stay in provider/account-specific Keychain entries. Only the app
 renews its own grants. Relinking verifies identity before replacing credentials.
 Failed cleanup stays queued without preventing unrelated account operations.
+Pending authorization pauses only the account being reconnected, and expires after
+30 minutes. Other accounts continue polling. Saved readings and chart history appear
+immediately after restart, marked stale until refreshed. Unexpected quota resets
+require repeated confirmation before changing the displayed value or synced history.
 
 The first `--run` can transfer the retained prototype's account metadata,
 predictors, known values, layout and scoped history. It never copies private CLI
@@ -105,9 +109,12 @@ accounts require sign-in; the real app's former Codex login can be adopted when
 its identity matches. Existing normal-app data is not replaced. Removing an account
 keeps its predictors and history; removing a predictor never removes its account.
 
-The original Codex account retains its legacy quota history and sync path. Other
-account/value pairs have independent CloudKit zones keyed by provider identity and
-scope. No credentials are stored in CloudKit.
+Every account/value pair has an independent CloudKit zone keyed by provider identity
+and scope, including the original Codex account. The same login uses the same zone
+on different Macs. Unpartitioned legacy history cannot be attributed reliably and
+is preserved rather than silently assigned to an account. The original Codex account
+still mirrors its scoped history to the local legacy file for existing consumers,
+archiving that file once before replacement. No credentials are stored in CloudKit.
 
 ### Retained prototype
 
@@ -122,13 +129,28 @@ numbers. These local commands do not upload, publish or release the app.
 
 ## Runtime Files
 
-Token Coffee stores quota samples in:
+The signed app stores account-partitioned quota samples under:
 
 ```text
-~/Library/Application Support/TokenCoffee/quota-samples.jsonl
+~/Library/Containers/com.pardeike.TokenCoffee/Data/Library/Application Support/TokenCoffee/multi-account/diagram-history/<account UUID>/<scope hash>.jsonl
 ```
 
-CloudKit-capable builds incrementally merge this file with private iCloud records of type `QuotaSample` in a per-user custom zone named `QuotaSamples`. Builds upgraded from earlier versions also scan the legacy default-zone `QuotaSample` records in small batches so existing synced history remains visible while stale legacy records are culled.
+CloudKit-capable builds incrementally merge each account/scope history with private
+iCloud records of type `QuotaSample` in its own `Account_<identity-and-scope hash>`
+zone. The normal dashboard no longer reads or cleans up the unowned `QuotaSamples`
+or default zones. Their records and old checkpoint files remain untouched.
+
+When CloudKit reports more changes, the app fetches consecutive pages sequentially, including empty and deletion-only pages. Each catch-up burst starts at most 100 requests and stops starting new requests after 20 seconds; an in-flight request can take longer. Unfinished catch-up continues on the next quota refresh, normally about a minute later, while caught-up clients retain the normal 15-minute sync interval (or the existing two-minute cleanup interval). CloudKit retry-after delays take precedence over both schedules. A non-advancing cursor produces a sync failure and a five-minute backoff instead of an endless request loop.
+
+Each `multi-account/cloud-state/<environment>/<identity-and-scope hash>.json` stores
+the change cursor and a recoverable history cache together in an atomic checkpoint
+before uploads or cleanup. A subsequent upload failure or interrupted JSONL write
+cannot lose the downloaded history. If a page within a burst fails, that burst
+resumes from the previous checkpoint after any required backoff.
+
+The original Codex account's local compatibility mirror remains at
+`TokenCoffee/quota-samples.jsonl` inside the same sandbox Application Support folder.
+Its previous contents are preserved in `multi-account/legacy-unattributed-history.jsonl`.
 
 Raw quota samples are retained for 14 days, with a hard cap of 25,000 samples after dedupe. CloudKit-capable builds delete remote `QuotaSample` records only after incremental sync has caught up, and only when the samples are older than the seven-day graph window.
 

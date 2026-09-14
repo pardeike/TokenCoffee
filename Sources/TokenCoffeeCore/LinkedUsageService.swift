@@ -21,6 +21,8 @@ public struct LinkedUsageDiagram: Identifiable, Sendable {
     public let samples: [QuotaSample]
     public let capturedAt: Date
     public var syncMessage: String? = nil
+    public var warning: String? = nil
+    public var isCached = false
     public var id: String { accountID.uuidString + ":" + scopeID }
 }
 
@@ -32,7 +34,12 @@ public actor LinkedUsageService {
     private let secrets: any LinkedAccountSecrets
     private let http: any CodexHTTPClient
     private let historySync: (any LinkedHistorySync)?
+    private let now: @Sendable () -> Date
     private var busy = false
+    private var readingAccounts = Set<UUID>()
+    private var completingLogin: UUID?
+    private var continuity: [String: QuotaSnapshotContinuityPolicy] = [:]
+    private var savedDiagrams: [String: LinkedUsageDiagram] = [:]
     private var pending: PendingLogin?
     private struct PendingLogin {
         let id: UUID
@@ -40,17 +47,20 @@ public actor LinkedUsageService {
         let provider: ProbeAccount.Provider
         let codex: CodexNativeDeviceCode?
         let claude: ClaudeAccountOAuth.Pending?
+        let expiresAt: Date
     }
 
     public init(root: URL, historySync: (any LinkedHistorySync)? = nil) throws {
         try self.init(root: root, secrets: LinkedAccountKeychain(), http: LinkedAccountHTTP(), historySync: historySync)
     }
 
-    init(root: URL, secrets: any LinkedAccountSecrets, http: any CodexHTTPClient, historySync: (any LinkedHistorySync)? = nil) throws {
+    init(root: URL, secrets: any LinkedAccountSecrets, http: any CodexHTTPClient, historySync: (any LinkedHistorySync)? = nil,
+         now: @escaping @Sendable () -> Date = { Date() }) throws {
         self.root = root
         self.secrets = secrets
         self.http = http
         self.historySync = historySync
+        self.now = now
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let registryURL = root.appendingPathComponent("accounts.json")
         if FileManager.default.fileExists(atPath: registryURL.path) {
@@ -63,19 +73,26 @@ public actor LinkedUsageService {
         let original = registry
         // Recover names from our own account-partitioned history, even when the
         // original predictors were removed and the current credential expired.
-        for index in registry.accounts.indices where registry.accounts[index].knownValues == nil {
+        for index in registry.accounts.indices {
             let account = registry.accounts[index]
             let directory = root.appendingPathComponent("diagram-history").appendingPathComponent(account.id.uuidString)
             let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
-            var values: [LinkedUsageValue] = []
+            var values = account.knownValues ?? []
             for file in files where file.pathExtension == "jsonl" {
-                guard let sample = try? QuotaSampleStore(fileURL: file).load().last else { continue }
+                guard let samples = try? QuotaSampleStore(fileURL: file).load(),
+                      let sample = QuotaSnapshotContinuityPolicy.repairedSamples(samples).last else { continue }
+                let bootstrap = QuotaSnapshotContinuityPolicy.bootstrap(from: samples)
+                let snapshot = bootstrap?.snapshot ?? QuotaSnapshotContinuityPolicy.snapshot(from: sample)
                 let scope = account.provider == .codex ? "general" : sample.limitId
                 let title = account.provider == .codex ? "General" : sample.limitName ?? scope
                 let hash = SHA256.hash(data: Data(scope.utf8)).map { String(format: "%02x", $0) }.joined()
-                guard file.deletingPathExtension().lastPathComponent == hash,
-                      !values.contains(where: { $0.scopeID == scope }) else { continue }
-                values.append(LinkedUsageValue(scopeID: scope, title: title))
+                guard file.deletingPathExtension().lastPathComponent == hash else { continue }
+                if !values.contains(where: { $0.scopeID == scope }) { values.append(LinkedUsageValue(scopeID: scope, title: title)) }
+                let key = account.id.uuidString + ":" + scope
+                continuity[key] = QuotaSnapshotContinuityPolicy(trustedSnapshot: snapshot, isCorroborated: bootstrap?.isCorroborated ?? false)
+                savedDiagrams[key] = LinkedUsageDiagram(accountID: account.id, scopeID: scope, title: title,
+                    snapshot: snapshot, samples: Self.currentCycle(samples, snapshot: snapshot),
+                    capturedAt: sample.capturedAt, isCached: true)
             }
             if !values.isEmpty { registry.accounts[index].knownValues = Self.sortedValues(values) }
         }
@@ -89,13 +106,17 @@ public actor LinkedUsageService {
             usesLegacyHistory: $0.id == registry.legacyCodexID, requiresSignIn: $0.requiresSignIn == true) }
     }
 
+    public func cachedDiagrams() -> [LinkedUsageDiagram] {
+        savedDiagrams.values.sorted { $0.id < $1.id }
+    }
+
     public func maintenanceMessage() -> String? {
         (registry.credentialCleanup ?? []).isEmpty ? nil
             : "The account change is saved, but an inactive Keychain credential still needs cleanup. TokenCoffee will retry before the next account operation."
     }
 
     public func rename(_ id: UUID, to name: String) throws -> [LinkedUsageAccount] {
-        guard !busy, pending == nil else { throw LinkedAccountError.busy }
+        guard !busy, !readingAccounts.contains(id), pending == nil else { throw LinkedAccountError.busy }
         let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, clean.count <= 60, !clean.contains(where: { $0.isNewline }) else {
             throw NativeUsage.Failure(diagnostic: "invalid_account_name")
@@ -116,9 +137,9 @@ public actor LinkedUsageService {
     }
 
     public func refresh(_ id: UUID) async throws -> [LinkedUsageDiagram] {
-        guard !busy, pending == nil else { throw LinkedAccountError.busy }
-        busy = true
-        defer { busy = false }
+        guard !busy, !readingAccounts.contains(id), pending?.target?.id != id else { throw LinkedAccountError.busy }
+        readingAccounts.insert(id)
+        defer { readingAccounts.remove(id) }
         try? cleanupCredentials()
         guard let account = registry.accounts.first(where: { $0.id == id }), let identity = account.identity else {
             throw NativeUsage.Failure(diagnostic: "account_identity_unavailable")
@@ -176,35 +197,58 @@ public actor LinkedUsageService {
         }
         updated.knownValues = Self.sortedValues(values)
         try save(registry.replacing(updated))
-        let now = Date()
+        let capturedAt = now()
         var result: [LinkedUsageDiagram] = []
-        for (scope, title, snapshot) in snapshots {
+        for (scope, title, incoming) in snapshots {
+            let diagramID = id.uuidString + ":" + scope
+            var policy = continuity[diagramID] ?? QuotaSnapshotContinuityPolicy()
+            let decision = policy.evaluate(incoming, capturedAt: capturedAt)
+            guard case let .accepted(observations) = decision, let latest = observations.last else {
+                continuity[diagramID] = policy
+                if var previous = savedDiagrams[diagramID] {
+                    previous.warning = "Confirming updated allowance"
+                    result.append(previous)
+                }
+                continue
+            }
+            let snapshot = latest.snapshot
             // Provider names and scope labels never become filesystem paths.
             let key = SHA256.hash(data: Data(scope.utf8)).map { String(format: "%02x", $0) }.joined()
             let store = QuotaSampleStore(fileURL: root.appendingPathComponent("diagram-history")
                 .appendingPathComponent(id.uuidString).appendingPathComponent(key + ".jsonl"))
             let previous = try store.load()
-            var samples = previous
-            if let sample = QuotaSample(snapshot: snapshot, capturedAt: now) { samples.append(sample) }
-            samples = QuotaSampleStore.compactedSamples(samples)
+            var samples = QuotaSampleStore.mergedSamples(previous + observations.compactMap {
+                QuotaSample(snapshot: $0.snapshot, capturedAt: $0.capturedAt)
+            })
+            // Keep the accepted run durable before waiting on iCloud. Its full
+            // confirmation evidence must reach the sync ingress repair policy.
+            try store.write(samples)
             var syncMessage: String?
             if let historySync, let source = accounts().first(where: { $0.id == id }) {
                 let synced = await historySync.sync(account: source, scope: scope, samples: samples, snapshot: snapshot)
                 samples = synced.samples
                 syncMessage = synced.message
+            } else {
+                samples = QuotaSampleStore.compactedSamples(QuotaSnapshotContinuityPolicy.repairedSamples(samples))
             }
             try store.write(samples)
-            let currentCycle = samples.filter { sample in
-                guard let reset = snapshot.secondary?.resetDate, let sampleReset = sample.weeklyResetsAt else { return false }
-                let start = reset.addingTimeInterval(-Double(snapshot.secondary?.windowDurationMins ?? 10_080) * 60)
-                return sample.capturedAt >= start && sample.capturedAt <= reset
-                    && abs(sampleReset.timeIntervalSince(reset)) < 300
-                    && sample.weeklyWindowMinutes == snapshot.secondary?.windowDurationMins
-            }
-            result.append(LinkedUsageDiagram(accountID: id, scopeID: scope, title: title, snapshot: snapshot,
-                samples: currentCycle, capturedAt: now, syncMessage: syncMessage))
+            continuity[diagramID] = policy
+            let diagram = LinkedUsageDiagram(accountID: id, scopeID: scope, title: title, snapshot: snapshot,
+                samples: Self.currentCycle(samples, snapshot: snapshot), capturedAt: latest.capturedAt, syncMessage: syncMessage)
+            savedDiagrams[diagramID] = diagram
+            result.append(diagram)
         }
         return result
+    }
+
+    private static func currentCycle(_ samples: [QuotaSample], snapshot: RateLimitSnapshot) -> [QuotaSample] {
+        samples.filter { sample in
+            guard let reset = snapshot.secondary?.resetDate, let sampleReset = sample.weeklyResetsAt else { return false }
+            let start = reset.addingTimeInterval(-Double(snapshot.secondary?.windowDurationMins ?? 10_080) * 60)
+            return sample.capturedAt >= start && sample.capturedAt <= reset
+                && abs(sampleReset.timeIntervalSince(reset)) < 300
+                && sample.weeklyWindowMinutes == snapshot.secondary?.windowDurationMins
+        }
     }
 
     private static func sortedValues(_ values: [LinkedUsageValue]) -> [LinkedUsageValue] {
@@ -233,7 +277,7 @@ public actor LinkedUsageService {
     }
 
     public func beginLogin(provider: String, replacing id: UUID? = nil) async throws -> LinkedAccountLogin {
-        guard !busy, pending == nil else { throw LinkedAccountError.busy }
+        guard !busy, pending == nil, id.map({ !readingAccounts.contains($0) }) ?? true else { throw LinkedAccountError.busy }
         busy = true
         defer { busy = false }
         try? cleanupCredentials()
@@ -244,9 +288,10 @@ public actor LinkedUsageService {
         let codex = provider == .codex ? try await codexAuth.requestDeviceCode() : nil
         let claude = provider == .claude ? ClaudeAccountOAuth.Pending() : nil
         try Task.checkCancellation()
-        pending = PendingLogin(id: loginID, target: target, provider: provider, codex: codex, claude: claude)
+        let expiresAt = now().addingTimeInterval(1800)
+        pending = PendingLogin(id: loginID, target: target, provider: provider, codex: codex, claude: claude, expiresAt: expiresAt)
         return LinkedAccountLogin(id: loginID, provider: provider.rawValue,
-            url: codex?.verificationURL ?? claude!.url, deviceCode: codex?.userCode)
+            url: codex?.verificationURL ?? claude!.url, deviceCode: codex?.userCode, expiresAt: expiresAt)
     }
 
     public func cancelLogin(_ id: UUID) {
@@ -258,9 +303,11 @@ public actor LinkedUsageService {
     }
 
     public func completeLogin(_ id: UUID, code: String = "") async throws -> UUID {
-        guard !busy, let login = pending, login.id == id else { throw LinkedAccountError.cancelled }
-        busy = true
-        defer { busy = false }
+        guard let login = pending, login.id == id else { throw LinkedAccountError.cancelled }
+        guard completingLogin == nil else { throw LinkedAccountError.busy }
+        guard now() < login.expiresAt else { pending = nil; throw LinkedAccountError.expiredLogin }
+        completingLogin = id
+        defer { completingLogin = nil }
         let data: Data
         let identity: String
         let email: String?
@@ -322,7 +369,7 @@ public actor LinkedUsageService {
     }
 
     public func remove(_ id: UUID) throws -> [LinkedUsageAccount] {
-        guard !busy, pending == nil else { throw LinkedAccountError.busy }
+        guard !busy, !readingAccounts.contains(id), pending == nil else { throw LinkedAccountError.busy }
         try? cleanupCredentials()
         guard let account = registry.accounts.first(where: { $0.id == id }) else { return accounts() }
         var next = registry
@@ -331,6 +378,8 @@ public actor LinkedUsageService {
             next.credentialCleanup = (next.credentialCleanup ?? []) + [reference]
         }
         try save(next)
+        savedDiagrams = savedDiagrams.filter { $0.value.accountID != id }
+        continuity = continuity.filter { !$0.key.hasPrefix(id.uuidString + ":") }
         try? cleanupCredentials()
         return accounts()
     }
@@ -354,9 +403,8 @@ public actor LinkedUsageService {
             id = try commitLogin(provider: .codex, target: existing, identity: identity,
                 email: snapshot.email, plan: snapshot.planType, credential: ManagedCodexTokens.encode(tokens))
         }
-        let legacy = try QuotaSampleStore.defaultStore()
-        let store = QuotaSampleStore(fileURL: root.appendingPathComponent("diagram-history/\(id.uuidString)/\(Self.hash("general")).jsonl"))
-        try store.write(QuotaSampleStore.compactedSamples(try store.load() + legacy.load()))
+        // Old unpartitioned samples have no account identity. Leave that archive
+        // untouched rather than assigning another device's history to this login.
         var next = registry
         next.legacyCodexID = id
         try save(next)
@@ -383,7 +431,7 @@ public actor LinkedUsageService {
         let windows = [reading.primary, reading.secondary].compactMap { $0 }
             .sorted { ($0.windowDurationMins ?? 0) < ($1.windowDurationMins ?? 0) }
         guard let allowance = windows.last else { throw NativeUsage.Failure(diagnostic: "missing_usage_windows") }
-        return RateLimitSnapshot(limitId: reading.limitId, limitName: reading.limitName,
+        return RateLimitSnapshot(limitId: reading.limitId ?? "codex", limitName: reading.limitName,
             primary: windows.count > 1 ? windows.first : nil, secondary: allowance, credits: reading.credits,
             planType: reading.planType, rateLimitReachedType: reading.rateLimitReachedType)
     }

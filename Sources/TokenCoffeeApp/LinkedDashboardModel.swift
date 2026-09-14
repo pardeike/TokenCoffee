@@ -8,8 +8,10 @@ final class LinkedDashboardModel: ObservableObject {
     @Published private(set) var accounts: [LinkedUsageAccount] = []
     @Published private(set) var diagrams: [LinkedUsageDiagram] = []
     @Published private(set) var errors: [UUID: String] = [:]
-    @Published private(set) var refreshing = false
+    @Published private(set) var refreshingAccounts = Set<UUID>()
+    var refreshing: Bool { !refreshingAccounts.isEmpty }
     @Published private(set) var linking = false
+    private var linkingAccountID: UUID?
     @Published private(set) var accountMessage: String?
     private var loginID: UUID?
     @Published var page = 0
@@ -56,23 +58,25 @@ final class LinkedDashboardModel: ObservableObject {
             }
             let accounts = await service.accounts()
             self?.accounts = accounts
+            self?.diagrams = await service.cachedDiagrams()
             while !Task.isCancelled {
                 await self?.refresh()
-                do { try await Task.sleep(for: .seconds(300)) } catch { break }
+                do { try await Task.sleep(for: .seconds(60)) } catch { break }
             }
         }
     }
     func stop() { task?.cancel(); task = nil; geometry.stop() }
 
     func refresh(_ accountID: UUID? = nil) async {
-        guard !refreshing, !linking else { return }
-        refreshing = true
-        defer { refreshing = false }
         if accountID != nil { accountMessage = nil }
         accounts = await service.accounts()
+        if diagrams.isEmpty { diagrams = await service.cachedDiagrams() }
         let inspected = geometry.inspectedAccount.flatMap { pagePredictors.indices.contains($0) ? pagePredictors[$0].id : nil }
         for account in accounts where accountID == nil || account.id == accountID {
             guard !Task.isCancelled else { return }
+            guard !refreshingAccounts.contains(account.id), !(accountID == nil && linking && linkingAccountID == account.id) else { continue }
+            refreshingAccounts.insert(account.id)
+            defer { refreshingAccounts.remove(account.id) }
             do {
                 let readings = try await service.refresh(account.id)
                 diagrams.removeAll { $0.accountID == account.id }
@@ -142,12 +146,13 @@ final class LinkedDashboardModel: ObservableObject {
     func beginAccountLogin(provider: String, replacing id: UUID?) async throws -> LinkedAccountLogin {
         guard !refreshing, !linking else { throw LinkedAccountError.busy }
         linking = true
+        linkingAccountID = id
         accountMessage = nil
         do {
             let login = try await service.beginLogin(provider: provider, replacing: id)
             loginID = login.id
             return login
-        } catch { linking = false; throw error }
+        } catch { linking = false; linkingAccountID = nil; throw error }
     }
 
     func completeAccountLogin(_ login: LinkedAccountLogin, code: String) async throws -> UUID {
@@ -158,10 +163,13 @@ final class LinkedDashboardModel: ObservableObject {
             await cancelAccountLogin()
             throw error
         }
-        loginID = nil; linking = false
+        loginID = nil
+        linkingAccountID = id
+        defer { linking = false; linkingAccountID = nil }
         accounts = await service.accounts()
         // Finish the first read before dismissing the sheet. A usage failure
         // doesn't undo a successful login or force another browser authorization.
+        // Keep background polling off this account until that first read finishes.
         await refresh(id)
         accountMessage = await service.maintenanceMessage() ?? (errors[id] == nil
             ? "Account connected and usage updated. Existing predictors are unchanged."
@@ -171,7 +179,7 @@ final class LinkedDashboardModel: ObservableObject {
 
     func cancelAccountLogin() async {
         if let loginID { await service.cancelLogin(loginID) }
-        loginID = nil; linking = false
+        loginID = nil; linking = false; linkingAccountID = nil
     }
 
     func removeAccount(_ account: LinkedUsageAccount) async -> Bool {

@@ -129,6 +129,7 @@ public struct LinkedAccountLogin: Identifiable, Sendable {
     public let provider: String
     public let url: URL
     public let deviceCode: String?
+    public let expiresAt: Date
 }
 
 struct ClaudeAccountCredential: Codable, Sendable {

@@ -83,6 +83,17 @@ struct AccountLoginView: View {
         }.padding(24).frame(width: 440)
         .interactiveDismissDisabled()
         .onDisappear { code = ""; task?.cancel() }
+        .task(id: login?.id) {
+            guard let pending = login else { return }
+            do { try await Task.sleep(for: .seconds(max(0, pending.expiresAt.timeIntervalSinceNow))) }
+            catch { return }
+            guard login?.id == pending.id, !dismissing else { return }
+            task?.cancel()
+            await task?.value
+            await model.cancelAccountLogin()
+            login = nil; code = ""; working = false
+            message = "This sign-in expired. Start a new browser sign-in to reconnect."
+        }
     }
 
     private func open(_ url: URL) {

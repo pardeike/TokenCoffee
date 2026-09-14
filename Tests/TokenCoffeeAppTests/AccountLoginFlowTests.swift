@@ -1,9 +1,97 @@
 import AppKit
+import CryptoKit
 import XCTest
 @testable import TokenCoffeeCore
 @testable import Token_Coffee
 
 final class AccountLoginFlowTests: XCTestCase {
+    func testCloudZoneIsIndependentOfAdoptionAndLocalAccountID() {
+        func account(_ key: String, legacy: Bool) -> LinkedUsageAccount {
+            LinkedUsageAccount(id: UUID(), provider: "Codex", name: "Personal", email: nil, plan: nil,
+                values: [], cloudKey: key, usesLegacyHistory: legacy)
+        }
+        let adopted = account("account-a", legacy: true)
+        let linkedElsewhere = account("account-a", legacy: false)
+        let anotherAdopted = account("account-b", legacy: true)
+        XCTAssertEqual(LinkedHistoryCloudSync.zoneName(account: adopted, scope: "general"),
+                       LinkedHistoryCloudSync.zoneName(account: linkedElsewhere, scope: "general"))
+        XCTAssertNotEqual(LinkedHistoryCloudSync.zoneName(account: adopted, scope: "general"),
+                          LinkedHistoryCloudSync.zoneName(account: anotherAdopted, scope: "general"))
+        XCTAssertNotEqual(LinkedHistoryCloudSync.zoneName(account: adopted, scope: "general"),
+                          LinkedHistoryCloudSync.zoneName(account: adopted, scope: "session"))
+        XCTAssertNotEqual(LinkedHistoryCloudSync.zoneName(account: adopted, scope: "general"), "QuotaSamples")
+    }
+
+    func testLegacyLocalMirrorArchivesOriginalOnlyOnce() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = QuotaSampleStore(fileURL: root.appendingPathComponent("quota-samples.jsonl"))
+        let archive = root.appendingPathComponent("legacy-unattributed-history.jsonl")
+        let snapshot = RateLimitSnapshot(limitId: "codex", limitName: nil, primary: nil,
+            secondary: RateLimitWindow(usedPercent: 42, windowDurationMins: 10_080, resetsAt: nil),
+            credits: nil, planType: nil, rateLimitReachedType: nil)
+        try store.write([try XCTUnwrap(QuotaSample(snapshot: snapshot, capturedAt: Date()))])
+        let original = try Data(contentsOf: store.fileURL)
+        try LinkedHistoryCloudSync.mirrorLegacyFile(samples: [], store: store, archive: archive)
+        XCTAssertEqual(try Data(contentsOf: archive), original)
+        try LinkedHistoryCloudSync.mirrorLegacyFile(samples: [], store: store, archive: archive)
+        XCTAssertEqual(try Data(contentsOf: archive), original)
+        XCTAssertTrue(try store.load().isEmpty)
+    }
+
+    @MainActor func testOfflineRestartRestoresSavedScopesWithoutChangingTimestamp() async throws {
+        let fixture = try Fixture(responses: [])
+        defer { fixture.cleanUp() }
+        let captured = Date().addingTimeInterval(-120)
+        for (scope, duration) in [("session", 300), ("general", 10_080), ("model-name:fable", 10_080), ("unknown-reset", 10_080)] {
+            let snapshot = RateLimitSnapshot(limitId: scope, limitName: scope, primary: nil,
+                secondary: RateLimitWindow(usedPercent: 42, windowDurationMins: duration,
+                    resetsAt: scope == "unknown-reset" ? nil : Int(captured.addingTimeInterval(Double(duration) * 30).timeIntervalSince1970)),
+                credits: nil, planType: nil, rateLimitReachedType: nil)
+            let key = SHA256.hash(data: Data(scope.utf8)).map { String(format: "%02x", $0) }.joined()
+            try QuotaSampleStore(fileURL: fixture.root.appendingPathComponent("diagram-history/\(fixture.accountID.uuidString)/\(key).jsonl"))
+                .write([try XCTUnwrap(QuotaSample(snapshot: snapshot, capturedAt: captured))])
+        }
+        let restarted = try LinkedDashboardModel(service: LinkedUsageService(root: fixture.root,
+            secrets: LoginSecrets(), http: LoginHTTP([])), defaults: fixture.defaults)
+        await restarted.refresh()
+        XCTAssertEqual(restarted.diagrams.count, 4)
+        XCTAssertTrue(restarted.diagrams.allSatisfy(\.isCached))
+        XCTAssertTrue(restarted.diagrams.allSatisfy { abs($0.capturedAt.timeIntervalSince(captured)) < 1 })
+        XCTAssertNotNil(restarted.errors[fixture.accountID], "Offline/sign-in error must remain alongside saved readings")
+    }
+
+    @MainActor func testSyncInformationDoesNotOverrideSessionOrQuotaSeverity() {
+        for used in [42.0, 100.0] {
+            let snapshot = RateLimitSnapshot(limitId: "session", limitName: "5h", primary: nil,
+                secondary: RateLimitWindow(usedPercent: used, windowDurationMins: 300, resetsAt: nil),
+                credits: nil, planType: nil, rateLimitReachedType: nil)
+            let projection = QuotaProjection(currentWeeklyUsedPercent: used, idealWeeklyUsedPercent: nil,
+                projectedWeeklyUsedPercentAtReset: nil, weeklyResetDate: nil, weeklyWindowStartDate: nil, paceState: .fine)
+            let tile = UsageTileView(title: "Five hours", provider: "Claude", snapshot: snapshot, samples: [],
+                projection: projection, now: Date(), kind: .detail, status: nil, prominent: false, inspecting: false,
+                syncMessage: "iCloud synced")
+            XCTAssertEqual(tile.tint, used == 100 ? .red : .cyan)
+            XCTAssertEqual(tile.sessionText, used == 100 ? "Limit reached" : "5-hour window")
+        }
+    }
+
+    @MainActor func testModelKeepsOtherAccountsPollingDuringReconnect() async throws {
+        let fixture = try Fixture(responses: Self.connectedResponses + Array(Self.connectedResponses.suffix(2)))
+        defer { fixture.cleanUp() }
+        let login = try await fixture.model.beginAccountLogin(provider: "Claude", replacing: fixture.accountID)
+        _ = try await fixture.model.completeAccountLogin(login, code: try Self.code(login))
+        let before = await fixture.http.requests.count
+        let pendingAdd = try await fixture.model.beginAccountLogin(provider: "Claude", replacing: nil)
+        await fixture.model.refresh()
+        let after = await fixture.http.requests.count
+        XCTAssertEqual(after, before + 2)
+        XCTAssertTrue(fixture.model.linking)
+        await fixture.model.cancelAccountLogin()
+        do { _ = try await fixture.model.completeAccountLogin(pendingAdd, code: "unused"); XCTFail("Cancelled login completed") }
+        catch LinkedAccountError.cancelled { }
+    }
+
     @MainActor func testImportedAccountReconnectFetchesValuesAndPreservesPredictors() async throws {
         let fixture = try Fixture(responses: Self.connectedResponses)
         defer { fixture.cleanUp() }

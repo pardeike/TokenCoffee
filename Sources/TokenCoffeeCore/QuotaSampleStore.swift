@@ -445,7 +445,7 @@ public struct QuotaSnapshotContinuityPolicy: Sendable {
         }
     }
 
-    fileprivate static func snapshot(from sample: QuotaSample) -> RateLimitSnapshot {
+    static func snapshot(from sample: QuotaSample) -> RateLimitSnapshot {
         RateLimitSnapshot(
             limitId: sample.limitId,
             limitName: sample.limitName,

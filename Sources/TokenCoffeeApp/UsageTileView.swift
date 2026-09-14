@@ -14,9 +14,10 @@ struct UsageTileView: View {
     let prominent: Bool
     let inspecting: Bool
     var accent: Color? = nil
+    var syncMessage: String? = nil
     private var used: Double { snapshot.secondary?.usedPercent ?? 0 }
     private var fiveHour: Double { status?.hasPrefix("5h limit") == true ? 100 : snapshot.primary?.usedPercent ?? 0 }
-    private var tint: Color { status != nil ? .orange : (used >= 100 || projection.paceState == .slowDown ? .red : .cyan) }
+    var tint: Color { used >= 100 || projection.paceState == .slowDown ? .red : (status != nil ? .orange : .cyan) }
 
     var body: some View {
         GeometryReader { geometry in
@@ -68,7 +69,7 @@ struct UsageTileView: View {
             .overlay { RoundedRectangle(cornerRadius: 7).strokeBorder(.primary.opacity(0.07), lineWidth: 0.5) }
             .clipped()
         }
-        .help("\(provider) · \(title), \(Int(used))% allowance used. \(sessionText). \(status ?? "")")
+        .help("\(provider) · \(title), \(Int(used))% allowance used. \(sessionText). \(status ?? ""). \(syncMessage ?? "")")
     }
 
     var sessionText: String {
