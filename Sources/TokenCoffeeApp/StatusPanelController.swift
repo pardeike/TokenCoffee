@@ -4,8 +4,8 @@ import SwiftUI
 import TokenCoffeeCore
 
 private enum StatusPanelAction {
-    case open
-    case focus
+    case open(NSScreen?)
+    case focus(NSScreen?)
     case close
 }
 
@@ -204,6 +204,12 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         restoredPrototypeFrame = true
         UserDefaults.standard.set(NSStringFromRect(panel.frame), forKey: framePrefix + ".windowFrame")
         UserDefaults.standard.set(prototype?.layout.rawValue, forKey: framePrefix + ".layout")
+        if let prototype, let screen = panel.screen,
+           let identifier = DashboardScreenPlacement.identifier(for: screen) {
+            DashboardScreenPlacement(frame: panel.frame, layout: prototype.layout).save(
+                defaults: .standard, key: framePrefix + ".screens." + identifier, screenFrame: screen.frame)
+            UserDefaults.standard.set(identifier, forKey: framePrefix + ".lastScreen")
+        }
     }
 
     private var framePrefix: String { linked == nil ? "prototype" : "linkedDashboard" }
@@ -213,6 +219,12 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
               let name = UserDefaults.standard.string(forKey: framePrefix + ".layout"),
               let layout = PrototypeLayout(rawValue: name),
               let saved = UserDefaults.standard.string(forKey: framePrefix + ".windowFrame") else { return }
+        if let identifier = UserDefaults.standard.string(forKey: framePrefix + ".lastScreen"),
+           let screen = NSScreen.screens.first(where: { DashboardScreenPlacement.identifier(for: $0) == identifier }),
+           let placement = savedPlacement(on: screen) {
+            applyPlacement(placement, on: screen)
+            return
+        }
         let frame = NSRectFromString(saved)
         guard frame.width.isFinite, frame.height.isFinite, frame.minX.isFinite, frame.minY.isFinite,
               frame.width > 0, frame.height > 0 else { return }
@@ -222,6 +234,33 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         prototype.layout = layout
         restoredPrototypeFrame = true
         applyPrototypeLayout(layout, proposedSize: frame.size)
+    }
+
+    private func savedPlacement(on screen: NSScreen) -> DashboardScreenPlacement? {
+        guard let identifier = DashboardScreenPlacement.identifier(for: screen) else { return nil }
+        return DashboardScreenPlacement(defaults: .standard,
+            key: framePrefix + ".screens." + identifier, screenFrame: screen.frame)
+    }
+
+    private func restorePlacement(on screen: NSScreen?) {
+        guard let prototype, let screen else { return }
+        if restoredPrototypeFrame, panel.screen == screen { return }
+        if restoredPrototypeFrame { savePrototypeFrame() }
+        let placement = savedPlacement(on: screen) ?? DashboardScreenPlacement.topRight(
+            size: panel.frame.size, layout: prototype.layout, visibleFrame: screen.visibleFrame, count: prototype.count)
+        applyPlacement(placement, on: screen)
+    }
+
+    private func applyPlacement(_ placement: DashboardScreenPlacement, on screen: NSScreen) {
+        guard let prototype else { return }
+        let fitted = placement.fitted(to: screen.visibleFrame, count: prototype.count)
+        applyingPrototypeSize = true
+        prototype.layout = fitted.layout
+        prototype.windowSize = fitted.frame.size
+        prototype.previewSize = fitted.frame.size
+        panel.setFrame(fitted.frame, display: true, animate: false)
+        applyingPrototypeSize = false
+        savePrototypeFrame()
     }
 
     @objc private func togglePanel() {
@@ -241,17 +280,20 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
     }
 
     private func panelActionForStatusItem() -> StatusPanelAction {
-        guard panel.isVisible else {
-            return .open
-        }
-        return panelWasFocused ? .close : .focus
+        // Capture now: expanded-interface completion can run after the pointer moves.
+        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }
+            ?? statusItem.button?.window?.screen
+        guard panel.isVisible else { return .open(screen) }
+        if prototype != nil, let screen, screen != panel.screen { return .focus(screen) }
+        return panelWasFocused ? .close : .focus(screen)
     }
 
     private func performPanelAction(_ action: StatusPanelAction) {
         switch action {
-        case .open:
-            openPanel()
-        case .focus:
+        case .open(let screen):
+            openPanel(on: screen)
+        case .focus(let screen):
+            restorePlacement(on: screen)
             focusPanel()
         case .close:
             closePanelWithoutCancellingStatusItem()
@@ -301,7 +343,9 @@ final class StatusPanelController: NSObject, NSWindowDelegate {
         closePanelWithoutCancellingStatusItem()
     }
 
-    private func openPanel() {
+    private func openPanel(on screen: NSScreen? = nil) {
+        let initialScreen = restoredPrototypeFrame ? nil : (statusItem.button?.window?.screen ?? NSScreen.main)
+        restorePlacement(on: screen ?? initialScreen)
         if prototype == nil || !restoredPrototypeFrame { positionPanel() }
         focusPanel()
         model?.setPanelVisible(true)

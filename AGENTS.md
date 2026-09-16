@@ -35,6 +35,10 @@
 - Preserve the fixed-size account/predictor management window and the adaptive
   dashboard's position, size and arrangement. Committed predictor count changes
   grow the selected arrangement before falling back to another layout.
+- Status-icon clicks show the dashboard on the clicked monitor. Each monitor
+  retains its own position, size and arrangement locally; new monitors start
+  at the top right of their visible area. Same-monitor clicks keep the existing
+  hide/focus behavior. Store monitor-relative frames keyed by display UUID.
 - Claude uses an independent PKCE browser grant, profile-only scope, secure
   code#state entry, and app-owned renewal. Never rotate or copy CLI credentials.
   Codex uses native device-code login. Relinking verifies the original provider
