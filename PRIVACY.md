@@ -1,8 +1,8 @@
 # Token Coffee Privacy Policy
 
-Last updated: May 7, 2026
+Last updated: September 16, 2026
 
-Token Coffee is a macOS menu-bar utility for viewing Codex quota status, forecasting usage, syncing short-lived quota samples through iCloud, and controlling Mac awake behavior.
+Token Coffee is a macOS menu-bar utility for viewing Codex and Claude usage limits, forecasting usage, syncing short-lived quota samples through iCloud, and controlling Mac awake behavior.
 
 Token Coffee does not operate its own server, does not include advertising, does not use analytics, and does not sell or share personal data.
 
@@ -18,11 +18,13 @@ If iCloud is available, Token Coffee can sync quota samples through the user's p
 
 The developer does not operate a separate sync service for this data.
 
-## Codex Sign-In and Quota Status
+## Account Sign-In and Usage Status
 
 Token Coffee signs in directly with ChatGPT/Codex using OpenAI's device-code flow and reads Codex quota information from the ChatGPT/Codex service. Codex authentication and account handling are provided by the Codex/OpenAI service.
 
-Token Coffee stores Codex authentication tokens in the user's macOS Keychain. Token Coffee does not send Codex authentication data to a Token Coffee server.
+Claude accounts use a separate browser authorization with profile access. Token Coffee reads account identity and usage limits directly from Anthropic. It does not copy or renew credentials belonging to the Claude CLI.
+
+Authentication tokens stay in the app's macOS Keychain, separately for each linked account. Account names, provider identities and selected usage limits are stored locally. Usage history is partitioned by account and limit; credentials never sync through iCloud. Token Coffee does not send authentication data to a Token Coffee server.
 
 ## Awake Controls
 
@@ -40,4 +42,4 @@ For privacy questions, bug reports, and support requests, use GitHub Issues:
 
 https://github.com/pardeike/TokenCoffee/issues
 
-Token Coffee is an independent utility and is not affiliated with OpenAI.
+Token Coffee is an independent utility and is not affiliated with OpenAI or Anthropic.

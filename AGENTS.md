@@ -70,3 +70,17 @@
   Back. Editors use the separate management window. During resize retain the
   normal material with grey schematic tiles; choose layout in real time and
   correct dimensions only on release. Preserve rounded-corner hit targets.
+
+# Mac App Store releases
+
+- App Store Connect app: `6766599809`, bundle `com.pardeike.TokenCoffee`.
+- Xcode Cloud workflow: `7FB6CE56-73D5-46F9-95DB-AD0FA7E00A44` (`Default`).
+  It archives `TokenCoffee.xcodeproj`, scheme `TokenCoffee`, on changes to `main`.
+- Bump `MARKETING_VERSION` in `project.yml`, update `CHANGELOG.md`, and run
+  `Scripts/build.sh` (or `Scripts/test.sh` when code changed). Commit the generated
+  Xcode project too. Keep `CURRENT_PROJECT_VERSION` at `0`; Cloud assigns it.
+- Use `codex-apple` for App Store Connect. Create the macOS version, update its
+  listing and review notes, and check screenshots against the current interface.
+  Push the release commit; match the cloud run to its full SHA, then attach its
+  processed build, validate and submit. Read back the review state. A successful
+  local build or push does not prove cloud upload or App Store submission.

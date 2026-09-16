@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0
+
+- Follow multiple Codex and Claude accounts in one adaptive dashboard.
+- Choose the usage limits to display, with custom predictor names, colours and ordering.
+- Keep each account and usage limit's history separate, with private iCloud sync across Macs.
+- Restore saved readings immediately and reconnect accounts without losing their settings or history.
+- Open the dashboard on the monitor whose menu icon you click, with a separate saved position, size and arrangement for each monitor.
+
 ## 1.0.6
 
 - Made initial iCloud history sync catch up much faster by fetching consecutive change pages while respecting CloudKit retry delays.

@@ -1,6 +1,6 @@
 # Token Coffee
 
-Token Coffee is a compact macOS menu bar app for keeping a Mac awake and keeping Codex usage visible at a glance.
+Token Coffee is a compact macOS menu bar app for keeping a Mac awake and keeping Codex and Claude usage visible at a glance.
 
 It covers one narrow workflow:
 
@@ -12,21 +12,15 @@ It covers one narrow workflow:
 
 ## Install
 
-Download the latest zip from:
+Get [Token Coffee on the Mac App Store](https://apps.apple.com/app/id6766599809).
 
-```text
-https://github.com/pardeike/TokenCoffee/releases/latest/download/TokenCoffee.zip
-```
-
-Unzip it, move `Token Coffee.app` to `/Applications`, and open it.
-
-The release build is ad-hoc signed but not notarized. If macOS blocks the first launch, either build it locally from source or use Finder's context menu and choose `Open`.
+Local development and ZIP packaging use the signed workflow below.
 
 ## Requirements
 
 - Apple Silicon Mac
 - macOS 15.0 or newer
-- ChatGPT account with Codex access
+- A ChatGPT account with Codex access or a supported Claude account for usage monitoring
 
 Token Coffee signs in with ChatGPT device-code login and reads Codex usage with a native HTTPS client. It does not require the Codex CLI.
 
@@ -84,7 +78,7 @@ power and screen-blackout controls. The fixed-size Settings window contains
 Accounts and Predictors. Add, rename, relink, refresh or remove accounts there.
 Predictors select an account value, custom name and colour; drag the list to reorder.
 Adding/removing predictors re-evaluates the dashboard layout without shrinking a
-valid user-selected size. Window geometry persists across restarts.
+valid user-selected size. Window geometry persists across restarts, independently for each monitor. Clicking a monitor's menu icon brings the dashboard there; new monitors start at the top right.
 
 Claude supplies independently selectable 5h, General and model-specific limits.
 Model names come from the provider response. Known values persist independently
@@ -181,4 +175,4 @@ rm -rf "$HOME/Library/Application Support/TokenCoffee"
 
 ## Privacy
 
-Token Coffee does not send usage data to its own service. It signs in directly with ChatGPT/Codex to read your account limits, stores authentication tokens in Keychain, stores quota samples locally, optionally syncs those samples through your private CloudKit database when the app is signed with iCloud entitlements, and uses macOS power APIs for the awake modes.
+Token Coffee does not send usage data to its own service. It signs in directly with ChatGPT/Codex or Claude to read your account limits, stores authentication tokens in Keychain, stores quota samples locally, optionally syncs those samples through your private CloudKit database when the app is signed with iCloud entitlements, and uses macOS power APIs for the awake modes.
