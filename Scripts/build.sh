@@ -87,6 +87,14 @@ sign_sleep_support() {
     codesign --verify --strict "$DERIVED/SleepSupport/tokencoffee-sleep-guard"
 }
 run sleep-support-signature sign_sleep_support
+verify_sleep_support_identity() {
+    xcrun clang -O2 -Wall -Wextra -Werror -mmacosx-version-min=15.0 \
+        "-DTOKENCOFFEE_TEAM_ID=\"$TEAM\"" -framework CoreFoundation -framework Security \
+        Scripts/test-sleep-guard-signature.c -o "$DERIVED/SleepSupport/test-sleep-guard-signature"
+    "$DERIVED/SleepSupport/test-sleep-guard-signature" accept "$APP" \
+        reject "$DERIVED/SleepSupport/tokencoffee-sleep-guard" reject /usr/bin/true
+}
+run sleep-support-identity verify_sleep_support_identity
 run keychain-crud "$APP/Contents/MacOS/Token Coffee" --verify-account-keychain
 if [[ "$MODE" == --run ]]; then
     stop_previous() {

@@ -23,15 +23,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "AppIdentity.h"
 
 // launchd runs this signed user agent outside App Sandbox. The existing sudo
 // grant permits only the two pmset commands. No root process or timer stays running.
 static char marker[PATH_MAX];
 static char directory[PATH_MAX];
-
-#ifndef TOKENCOFFEE_TEAM_ID
-#define TOKENCOFFEE_TEAM_ID "W65292CD8T"
-#endif
 
 static int has_lid(void) {
 #ifdef SLEEP_GUARD_TESTING
@@ -388,7 +385,7 @@ static int authenticate_peer(int connection, pid_t *pid) {
     SecRequirementRef requirement = NULL;
     OSStatus result = SecCodeCopyGuestWithAttributes(NULL, attributes, kSecCSDefaultFlags, &code);
     if (result == errSecSuccess) result = SecRequirementCreateWithString(
-        CFSTR("anchor apple generic and identifier \"com.pardeike.TokenCoffee\" and certificate leaf[subject.OU] = \"" TOKENCOFFEE_TEAM_ID "\""),
+        TOKENCOFFEE_APP_REQUIREMENT,
         kSecCSDefaultFlags, &requirement);
     if (result == errSecSuccess) result = SecCodeCheckValidity(code, kSecCSDefaultFlags, requirement);
     if (requirement) CFRelease(requirement);
