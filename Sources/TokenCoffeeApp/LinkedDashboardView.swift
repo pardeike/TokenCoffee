@@ -187,17 +187,15 @@ private struct LinkedDashboardMenu: NSViewRepresentable {
             model.geometry.menuOpen = true
             defer { model.geometry.menuOpen = false }
             let menu = NSMenu()
+            menu.autoenablesItems = false
             if let power = model.power {
-                let blackout = NSMenuItem(title: "Screen blackout", action: nil, keyEquivalent: "")
-                let submenu = NSMenu()
-                for delay in ScreenBlackoutDelay.allCases {
-                    let title = delay.inactivityThreshold.map { "After \(Int($0 / 60)) min" } ?? "Off"
-                    let item = LinkedMenuItem(title) { power.setScreenBlackoutDelay(delay) }
-                    item.state = power.screenBlackoutDelay == delay ? .on : .off
-                    submenu.addItem(item)
-                }
-                blackout.submenu = submenu
+                let sleep = PanelControlMenu.displaySleepMenuItem(selectedDelay: power.displaySleepDelay) { power.setDisplaySleepDelay($0) }
+                sleep.isEnabled = power.powerMode != .keepAwakeDisplay
+                menu.addItem(sleep)
+                let blackout = PanelControlMenu.screenBlackoutMenuItem(selectedDelay: power.screenBlackoutDelay) { power.setScreenBlackoutDelay($0) }
+                blackout.isEnabled = power.powerMode != .keepAwake
                 menu.addItem(blackout)
+                menu.addItem(PanelControlMenu.sleepSupportMenuItem())
                 if let error = power.powerErrorMessage {
                     let item = NSMenuItem(title: error, action: nil, keyEquivalent: "")
                     item.isEnabled = false; menu.addItem(item)

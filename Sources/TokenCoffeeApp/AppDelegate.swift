@@ -14,6 +14,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
+        if CommandLine.arguments.contains("--verify-sleep-protection") {
+            Task {
+                do {
+                    try await ClosedLidSleepProtection.verify(
+                        holdForCrashCheck: CommandLine.arguments.contains("--hold-for-crash-check")
+                    )
+                    print("ok")
+                    Darwin.exit(0)
+                } catch {
+                    fputs(error.localizedDescription + "\n", stderr)
+                    Darwin.exit(1)
+                }
+            }
+            return
+        }
+
         guard !Self.isRunningUnitTests else {
             return
         }
@@ -67,11 +83,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             quotaClient: CodexRateLimitClient(),
             sampleStore: sampleStore,
             sampleSyncService: CloudQuotaSampleSyncService(),
-            failSafeInstaller: ClamshellFailSafeInstaller(),
             demoScenario: demoScenario,
             startsInDemoMode: startsInDemoMode
         )
-        let screenBlankingController = ScreenBlankingController()
+        let screenBlankingController = ScreenBlankingController { [weak model] action in
+            model?.performDisplayAction(action)
+        }
         self.model = model
         // Configure ownership before opening the panel: panel-open refresh must
         // not start the legacy quota client beside the new account reader.
@@ -99,16 +116,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         self.screenBlankingController = screenBlankingController
-        self.screenBlankingCancellable = Publishers.CombineLatest(
+        self.screenBlankingCancellable = Publishers.CombineLatest3(
             model.$powerMode,
-            model.$screenBlackoutDelay
+            model.$screenBlackoutDelay,
+            model.$displaySleepDelay
         )
             .sink { [weak screenBlankingController] configuration in
-                let (powerMode, blackoutDelay) = configuration
+                let (powerMode, blackoutDelay, displaySleepDelay) = configuration
                 Task { @MainActor in
                     screenBlankingController?.setConfiguration(
                         powerMode: powerMode,
-                        blackoutDelay: blackoutDelay
+                        blackoutDelay: blackoutDelay,
+                        displaySleepDelay: displaySleepDelay
                     )
                 }
             }

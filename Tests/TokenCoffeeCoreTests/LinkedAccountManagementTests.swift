@@ -26,6 +26,15 @@ final class LinkedAccountManagementTests: XCTestCase {
         XCTAssertThrowsError(try pending.code(from: "code#" + pending.state, now: pending.createdAt.addingTimeInterval(1800)))
     }
 
+    func testClaudeFailureDiagnosticsExcludePrivateResponseContent() {
+        XCTAssertEqual(ClaudeAccountOAuth.failureCode(in: Data(#"{"error":"invalid_grant","error_description":"private-token"}"#.utf8)), "invalid_grant")
+        XCTAssertEqual(ClaudeAccountOAuth.failureCode(in: Data(#"{"error":{"type":"authentication_error","message":"private-account"}}"#.utf8)), "authentication_error")
+        for response in [#"{"error":"private-token"}"#, #"{"error":{"type":"private-token"}}"#,
+                         #"{"error_description":"private-token"}"#, "private-response", "[]"] {
+            XCTAssertNil(ClaudeAccountOAuth.failureCode(in: Data(response.utf8)))
+        }
+    }
+
     @MainActor func testAddDuplicateWrongAccountRelinkAndRemoval() async throws {
         let root = try root()
         defer { try? FileManager.default.removeItem(at: root) }

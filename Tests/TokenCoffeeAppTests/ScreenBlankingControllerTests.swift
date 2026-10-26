@@ -5,172 +5,122 @@ import XCTest
 
 @MainActor
 final class ScreenBlankingControllerTests: XCTestCase {
-    func testBlackoutStartsAtConfiguredDelayAndEndsAfterInput() {
-        var idleTime: TimeInterval = 59.99
-        let presenter = FakeScreenBlackoutPresenter()
-        let controller = ScreenBlankingController(
-            checkInterval: 3_600,
-            idleTimeProvider: { idleTime },
-            presenter: presenter
-        )
+    func testMacAwakeUsesItsOwnDisplaySleepDeadline() {
+        var idle: TimeInterval = 59.99
+        var actions: [DisplayPowerAction] = []
+        let cover = FakeScreenBlackoutPresenter()
+        let controller = ScreenBlankingController(idleTimeProvider: { idle }, lidClosedProvider: { false },
+            observesSystemEvents: false, cover: cover, action: { actions.append($0) })
         defer { controller.shutdown() }
 
-        controller.setConfiguration(powerMode: .keepAwakeDisplay, blackoutDelay: .oneMinute)
-        XCTAssertFalse(presenter.isVisible)
-
-        idleTime = 60
+        controller.setConfiguration(powerMode: .keepAwake, blackoutDelay: .off, displaySleepDelay: .oneMinute)
+        XCTAssertTrue(controller.hasScheduledCheck)
+        idle = 60
         controller.checkNow()
-        XCTAssertTrue(presenter.isVisible)
-
-        idleTime = 0
-        controller.checkNow()
-        XCTAssertFalse(presenter.isVisible)
+        XCTAssertEqual(actions, [.restore, .sleep])
+        XCTAssertFalse(cover.isVisible)
+        XCTAssertFalse(controller.hasScheduledCheck)
+        for _ in 0..<10 { controller.checkNow() }
+        XCTAssertEqual(actions, [.restore, .sleep], "Idle state must issue no redundant actions")
     }
 
-    func testOnlyKeepScreenOnEnablesBlackoutAndModeChangeEndsIt() {
-        let presenter = FakeScreenBlackoutPresenter()
-        let controller = ScreenBlankingController(
-            checkInterval: 3_600,
-            idleTimeProvider: { 60 },
-            presenter: presenter
-        )
+    func testMacAwakeSleepsDisplayImmediatelyWhenLidCloses() {
+        var closed = false
+        var actions: [DisplayPowerAction] = []
+        let controller = ScreenBlankingController(idleTimeProvider: { 0 }, lidClosedProvider: { closed },
+            observesSystemEvents: false, cover: FakeScreenBlackoutPresenter(), action: { actions.append($0) })
         defer { controller.shutdown() }
+        controller.setConfiguration(powerMode: .keepAwake, blackoutDelay: .off, displaySleepDelay: .off)
+        closed = true
+        controller.checkNow()
+        XCTAssertEqual(actions, [.restore, .sleep])
+        XCTAssertFalse(controller.hasScheduledCheck)
+    }
 
-        controller.setConfiguration(powerMode: .off, blackoutDelay: .oneMinute)
-        XCTAssertFalse(presenter.isVisible)
-
-        controller.setConfiguration(powerMode: .keepAwake, blackoutDelay: .oneMinute)
-        XCTAssertFalse(presenter.isVisible)
-
+    func testScreenOnDimsClosedLidWithoutSleepingOrCoveringWhenCoverIsOff() {
+        var closed = false
+        var actions: [DisplayPowerAction] = []
+        let cover = FakeScreenBlackoutPresenter()
+        let controller = ScreenBlankingController(idleTimeProvider: { 600 }, lidClosedProvider: { closed },
+            observesSystemEvents: false, cover: cover, action: { actions.append($0) })
+        defer { controller.shutdown() }
         controller.setConfiguration(powerMode: .keepAwakeDisplay, blackoutDelay: .off)
-        XCTAssertFalse(presenter.isVisible)
-
-        controller.setConfiguration(powerMode: .keepAwakeDisplay, blackoutDelay: .oneMinute)
-        XCTAssertTrue(presenter.isVisible)
-
-        controller.setConfiguration(powerMode: .keepAwake, blackoutDelay: .oneMinute)
-        XCTAssertFalse(presenter.isVisible)
-    }
-
-    func testChangingDelayReevaluatesAndOffImmediatelyEndsBlackout() {
-        var idleTime: TimeInterval = 90
-        let presenter = FakeScreenBlackoutPresenter()
-        let controller = ScreenBlankingController(
-            checkInterval: 3_600,
-            idleTimeProvider: { idleTime },
-            presenter: presenter
-        )
-        defer { controller.shutdown() }
-
-        controller.setConfiguration(powerMode: .keepAwakeDisplay, blackoutDelay: .oneMinute)
-        XCTAssertTrue(presenter.isVisible)
-
-        controller.setConfiguration(powerMode: .keepAwakeDisplay, blackoutDelay: .twoMinutes)
-        XCTAssertFalse(presenter.isVisible)
-
-        idleTime = 120
+        closed = true
         controller.checkNow()
-        XCTAssertTrue(presenter.isVisible)
-
-        controller.setConfiguration(powerMode: .keepAwakeDisplay, blackoutDelay: .off)
-        XCTAssertFalse(presenter.isVisible)
+        controller.checkNow()
+        closed = false
+        controller.checkNow()
+        XCTAssertEqual(actions, [.restore, .dim, .restore])
+        XCTAssertFalse(actions.contains(.sleep))
+        XCTAssertFalse(cover.isVisible)
+        XCTAssertFalse(controller.hasScheduledCheck)
     }
 
-    func testDisplayChangesOnlyRefreshAnActiveBlackout() {
-        let presenter = FakeScreenBlackoutPresenter()
-        let controller = ScreenBlankingController(
-            checkInterval: 3_600,
-            idleTimeProvider: { 60 },
-            presenter: presenter
-        )
+    func testOptionalCoverDimsIdleScreensAndInputRestoresThem() {
+        var idle: TimeInterval = 60
+        var actions: [DisplayPowerAction] = []
+        let cover = FakeScreenBlackoutPresenter()
+        let controller = ScreenBlankingController(idleTimeProvider: { idle }, lidClosedProvider: { false },
+            observesSystemEvents: false, cover: cover, action: { actions.append($0) })
         defer { controller.shutdown() }
-
         controller.setConfiguration(powerMode: .keepAwakeDisplay, blackoutDelay: .oneMinute)
-        NotificationCenter.default.post(
-            name: NSApplication.didChangeScreenParametersNotification,
-            object: nil
-        )
-        XCTAssertEqual(presenter.refreshCount, 1)
+        XCTAssertTrue(cover.isVisible)
+        XCTAssertEqual(actions, [.dimAll])
+        XCTAssertFalse(controller.hasScheduledCheck)
+        for _ in 0..<10 { controller.checkNow() }
+        XCTAssertEqual(actions, [.dimAll])
+        idle = 0
+        cover.dismiss()
+        XCTAssertFalse(cover.isVisible)
+        XCTAssertEqual(actions.last, .restore)
+        XCTAssertTrue(controller.hasScheduledCheck)
+    }
 
+    func testDisplayWakeAllowsAFullIdleDelayBeforeSleepingAgain() {
+        var date = Date(timeIntervalSince1970: 1_000)
+        var actions: [DisplayPowerAction] = []
+        let controller = ScreenBlankingController(idleTimeProvider: { 600 }, lidClosedProvider: { false },
+            observesSystemEvents: false, now: { date }, cover: FakeScreenBlackoutPresenter(),
+            action: { actions.append($0) })
+        defer { controller.shutdown() }
+        controller.setConfiguration(powerMode: .keepAwake, blackoutDelay: .off)
+        XCTAssertEqual(actions.last, .sleep)
+        controller.displayWoke()
+        XCTAssertEqual(actions.last, .restore)
+        date.addTimeInterval(60)
+        controller.checkNow()
+        XCTAssertEqual(actions.last, .sleep)
+    }
+
+    func testOffRestoresBrightnessAndRemovesAllScheduledWork() {
+        var actions: [DisplayPowerAction] = []
+        let cover = FakeScreenBlackoutPresenter()
+        let controller = ScreenBlankingController(idleTimeProvider: { 60 }, lidClosedProvider: { true },
+            observesSystemEvents: false, cover: cover, action: { actions.append($0) })
+        controller.setConfiguration(powerMode: .keepAwakeDisplay, blackoutDelay: .oneMinute)
         controller.setConfiguration(powerMode: .off, blackoutDelay: .oneMinute)
-        NotificationCenter.default.post(
-            name: NSApplication.didChangeScreenParametersNotification,
-            object: nil
-        )
-        XCTAssertEqual(presenter.refreshCount, 1)
+        XCTAssertEqual(actions.last, .restore)
+        XCTAssertFalse(cover.isVisible)
+        XCTAssertFalse(controller.hasScheduledCheck)
     }
 
-    func testPresenterMovesCursorBeforeBlackoutToBottomRightOfRightmostDisplay() {
-        var actions: [String] = []
-        var cursorPoints: [CGPoint] = []
-        let presenter = ScreenBlackoutPresenter(
-            screensProvider: {
-                actions.append("blackout")
-                return []
-            },
-            displayBoundsProvider: {
-                [
-                    CGRect(x: -1_280, y: 0, width: 1_280, height: 1_024),
-                    CGRect(x: 0, y: 0, width: 1_440, height: 900),
-                    CGRect(x: 1_440, y: 100, width: 1_920, height: 1_080)
-                ]
-            },
-            moveCursor: { point in
-                actions.append("cursor")
-                cursorPoints.append(point)
-                return .success
-            }
-        )
-
-        presenter.show()
-        presenter.show()
-        XCTAssertEqual(actions, ["cursor", "blackout"])
-        XCTAssertEqual(cursorPoints, [CGPoint(x: 3_359, y: 1_179)])
-    }
-
-    func testBlackoutMenuListsEveryDelayAndChecksCurrentSelection() throws {
-        var selectedDelay: ScreenBlackoutDelay?
-        let menuItem = PanelControlMenu.screenBlackoutMenuItem(selectedDelay: .fiveMinutes) {
-            selectedDelay = $0
-        }
-        let submenu = try XCTUnwrap(menuItem.submenu)
-
-        XCTAssertEqual(
-            submenu.items.map(\.title),
-            ["Off", "1min idle", "2min idle", "5min idle", "10min idle", "1h idle"]
-        )
-        XCTAssertEqual(
-            submenu.items.map(\.state),
-            [.off, .off, .off, .on, .off, .off]
-        )
-
-        let tenMinuteItem = submenu.items[4]
-        XCTAssertTrue(NSApp.sendAction(
-            try XCTUnwrap(tenMinuteItem.action),
-            to: tenMinuteItem.target,
-            from: tenMinuteItem
-        ))
-        XCTAssertEqual(selectedDelay, .tenMinutes)
+    func testSleepAndCoverMenusHaveIndependentMeaning() throws {
+        let sleep = PanelControlMenu.displaySleepMenuItem(selectedDelay: .oneMinute) { _ in }
+        let cover = PanelControlMenu.screenBlackoutMenuItem(selectedDelay: .off) { _ in }
+        XCTAssertEqual(sleep.title, "Display sleep")
+        XCTAssertEqual(try XCTUnwrap(sleep.submenu).items.first?.title, "Never")
+        XCTAssertEqual(cover.title, "Screen blackout")
+        XCTAssertEqual(try XCTUnwrap(cover.submenu).items.first?.title, "Off")
+        XCTAssertEqual(sleep.submenu?.items[1].state, .on)
+        XCTAssertEqual(cover.submenu?.items[0].state, .on)
     }
 }
 
 @MainActor
 private final class FakeScreenBlackoutPresenter: ScreenBlackoutPresenting {
     private(set) var isVisible = false
-    private(set) var refreshCount = 0
-
-    func show() {
-        isVisible = true
-    }
-
-    func hide() {
-        isVisible = false
-    }
-
-    func refreshDisplays() {
-        guard isVisible else {
-            return
-        }
-        refreshCount += 1
-    }
+    var onDismiss: (() -> Void)?
+    func show() { isVisible = true }
+    func hide() { isVisible = false }
+    func dismiss() { hide(); onDismiss?() }
 }

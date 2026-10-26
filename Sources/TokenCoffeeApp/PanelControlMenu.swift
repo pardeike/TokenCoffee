@@ -21,9 +21,15 @@ enum PanelControlMenu {
         })
         menu.addItem(.separator())
 
-        menu.addItem(screenBlackoutMenuItem(selectedDelay: model.screenBlackoutDelay) { delay in
+        let sleep = displaySleepMenuItem(selectedDelay: model.displaySleepDelay) { model.setDisplaySleepDelay($0) }
+        sleep.isEnabled = model.powerMode != .keepAwakeDisplay
+        menu.addItem(sleep)
+        let blackout = screenBlackoutMenuItem(selectedDelay: model.screenBlackoutDelay) { delay in
             model.setScreenBlackoutDelay(delay)
-        })
+        }
+        blackout.isEnabled = model.powerMode != .keepAwake
+        menu.addItem(blackout)
+        menu.addItem(sleepSupportMenuItem())
         menu.addItem(.separator())
 
         let authenticationItem = actionItem(title: model.authenticationMenuTitle) {
@@ -60,8 +66,9 @@ enum PanelControlMenu {
         selectedDelay: ScreenBlackoutDelay,
         onSelect: @escaping (ScreenBlackoutDelay) -> Void
     ) -> NSMenuItem {
-        let item = NSMenuItem(title: "Black out Screen", action: nil, keyEquivalent: "")
-        let submenu = NSMenu(title: "Black out Screen")
+        let item = NSMenuItem(title: "Screen blackout", action: nil, keyEquivalent: "")
+        item.toolTip = "In Screen on, dim and cover idle displays. Input uncovers them."
+        let submenu = NSMenu(title: "Screen blackout")
         submenu.autoenablesItems = false
 
         for delay in ScreenBlackoutDelay.allCases {
@@ -73,6 +80,23 @@ enum PanelControlMenu {
         }
 
         item.submenu = submenu
+        return item
+    }
+
+    static func sleepSupportMenuItem() -> NSMenuItem {
+        actionItem(title: "Sleep support…") {
+            NSWorkspace.shared.open(URL(string: "https://github.com/pardeike/TokenCoffee#sleep-support")!)
+        }
+    }
+
+    static func displaySleepMenuItem(
+        selectedDelay: ScreenBlackoutDelay,
+        onSelect: @escaping (ScreenBlackoutDelay) -> Void
+    ) -> NSMenuItem {
+        let item = screenBlackoutMenuItem(selectedDelay: selectedDelay, onSelect: onSelect)
+        item.title = "Display sleep"
+        item.toolTip = "In Mac awake, turn displays off after this idle time. The Mac keeps working."
+        item.submenu?.items.first?.title = "Never"
         return item
     }
 

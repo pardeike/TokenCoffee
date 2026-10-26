@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import LocalAuthentication
+import OSLog
 import Security
 
 public struct LinkedUsageValue: Codable, Equatable, Sendable {
@@ -143,6 +144,7 @@ struct ClaudeAccountCredential: Codable, Sendable {
 /// Protocol also documented by claudexbar/docs/AUTH.md; profile-only scope follows
 /// the local BrrainzTools implementation. This is not a public provider API contract.
 struct ClaudeAccountOAuth: Sendable {
+    private static let logger = Logger(subsystem: "com.pardeike.TokenCoffee", category: "ClaudeAuth")
     static let clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
     static let redirect = "https://platform.claude.com/oauth/code/callback"
     let http: any CodexHTTPClient
@@ -188,7 +190,7 @@ struct ClaudeAccountOAuth: Sendable {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
-        let data = try await response(request)
+        let data = try await response(request, operation: "token")
         struct Response: Decodable {
             let access_token: String; let refresh_token: String?; let expires_in: Double; let scope: String?
         }
@@ -212,11 +214,24 @@ struct ClaudeAccountOAuth: Sendable {
         request.setValue("Bearer " + credential.accessToken, forHTTPHeaderField: "Authorization")
         request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        return try await response(request)
+        return try await response(request, operation: name)
     }
-    private func response(_ request: URLRequest) async throws -> Data {
+    // Never log provider descriptions or arbitrary response text. They can contain
+    // credentials or account details, including in an unexpected error field.
+    static func failureCode(in data: Data) -> String? {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let code = object["error"] as? String ?? (object["error"] as? [String: Any])?["type"] as? String,
+              ["invalid_grant", "invalid_request", "invalid_scope", "unauthorized_client",
+               "unsupported_grant_type", "access_denied", "server_error", "temporarily_unavailable",
+               "authentication_error", "permission_error", "rate_limit_error"].contains(code) else { return nil }
+        return code
+    }
+    private func response(_ request: URLRequest, operation: String) async throws -> Data {
         let (data, response) = try await http.data(for: request)
-        guard response.statusCode == 200 else { throw LinkedAccountError.http(response.statusCode) }
+        guard response.statusCode == 200 else {
+            Self.logger.error("Claude \(operation, privacy: .public) request failed; HTTP \(response.statusCode, privacy: .public); code \(Self.failureCode(in: data) ?? "unknown", privacy: .public)")
+            throw LinkedAccountError.http(response.statusCode)
+        }
         guard data.count <= 131_072 else { throw LinkedAccountError.invalidResponse }
         return data
     }

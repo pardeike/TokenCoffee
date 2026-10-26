@@ -36,9 +36,13 @@ run() {
 }
 MODE="${1:-build}"
 case "$MODE" in
-    build|--test|--run|--verify|--package) ;;
-    *) printf 'Use Scripts/build.sh [--test|--verify|--run|--package]. Prototype launch modes are retired.\n' >&2; exit 2 ;;
+    build|--test|--run|--verify|--package|--deploy) ;;
+    *) printf 'Use Scripts/build.sh [--test|--verify|--run|--package|--deploy HOST]. Prototype launch modes are retired.\n' >&2; exit 2 ;;
 esac
+if [[ "$MODE" == --deploy && $# != 2 ]]; then
+    printf 'Use Scripts/build.sh --deploy HOST\n' >&2
+    exit 2
+fi
 TEAM="${TOKENCOFFEE_DEVELOPMENT_TEAM:-W65292CD8T}"
 BUNDLE_ID=com.pardeike.TokenCoffee
 ENVIRONMENT="${TOKENCOFFEE_CLOUDKIT_ENVIRONMENT:-Development}"
@@ -48,7 +52,19 @@ SIGNING=(-allowProvisioningUpdates CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Auto
     "DEVELOPMENT_TEAM=$TEAM"
     "CLOUDKIT_CONTAINER_ENVIRONMENT=$ENVIRONMENT")
 run generate xcodegen generate
-if [[ "$MODE" == --test || "$MODE" == --verify || "$MODE" == --run ]]; then
+build_sleep_support() {
+    mkdir -p "$DERIVED/SleepSupport"
+    xcrun clang -O2 -Wall -Wextra -Werror -mmacosx-version-min=15.0 \
+        "-DTOKENCOFFEE_TEAM_ID=\"$TEAM\"" \
+        -framework CoreFoundation -framework CoreGraphics -framework IOKit -framework Security Sources/SleepGuard/main.c \
+        -o "$DERIVED/SleepSupport/tokencoffee-sleep-guard"
+    xcrun clang -O2 -Wall -Wextra -Werror -DSLEEP_GUARD_TESTING -mmacosx-version-min=15.0 \
+        -framework CoreFoundation -framework CoreGraphics -framework IOKit -framework Security Sources/SleepGuard/main.c \
+        -o "$DERIVED/SleepSupport/test-sleep-guard"
+    python3 Scripts/test-sleep-guard.py "$DERIVED/SleepSupport/test-sleep-guard"
+}
+run sleep-support build_sleep_support
+if [[ "$MODE" == --test || "$MODE" == --verify || "$MODE" == --run || "$MODE" == --deploy ]]; then
     run tests xcodebuild -scheme TokenCoffee -configuration Debug -derivedDataPath "$DERIVED" \
         -destination 'platform=macOS,arch=arm64' test "${SIGNING[@]}"
 fi
@@ -63,6 +79,14 @@ verify_signature() {
     [[ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.app-sandbox' "$DERIVED/signed-entitlements.plist")" == true ]]
 }
 run signature verify_signature
+sign_sleep_support() {
+    local identity
+    identity=$(codesign -dvv "$APP" 2>&1 | sed -n 's/^Authority=//p' | head -n 1)
+    [[ -n "$identity" ]] || { printf 'Missing signing identity for sleep support\n'; return 1; }
+    codesign --force --options runtime --timestamp --identifier com.pardeike.TokenCoffee.SleepGuard --sign "$identity" "$DERIVED/SleepSupport/tokencoffee-sleep-guard"
+    codesign --verify --strict "$DERIVED/SleepSupport/tokencoffee-sleep-guard"
+}
+run sleep-support-signature sign_sleep_support
 run keychain-crud "$APP/Contents/MacOS/Token Coffee" --verify-account-keychain
 if [[ "$MODE" == --run ]]; then
     stop_previous() {
@@ -71,6 +95,8 @@ if [[ "$MODE" == --run ]]; then
         for id in $ids; do brrainztools quit --pid "$id" --wait --timeout 20; done
     }
     run stop-previous stop_previous
+    run sleep-support-install env "TOKENCOFFEE_INSTALL_LOG_DIRECTORY=$PWD/.build/logs" Scripts/install-sleep-support.sh
+    run sleep-support-connection "$APP/Contents/MacOS/Token Coffee" --verify-sleep-protection
     run transfer-settings xcrun swift Scripts/transfer-prototype-data.swift
     run launch brrainztools launch "$APP/Contents/MacOS/Token Coffee" --wait-window --no-prompt --timeout 20
     run verify-window brrainztools ax --app "$APP" wait-for-window 'Token Coffee' --no-prompt --timeout 10
@@ -79,5 +105,8 @@ if [[ "$MODE" == --package ]]; then
     run audit Scripts/audit-app-store-bundle.sh "$APP"
     run package-directory mkdir -p dist
     run package ditto -c -k --norsrc --keepParent "$APP" dist/TokenCoffee.zip
+fi
+if [[ "$MODE" == --deploy ]]; then
+    run deploy Scripts/deploy-to-mac.sh "$2" "$APP" "$DERIVED/SleepSupport/tokencoffee-sleep-guard"
 fi
 printf 'ok\n'

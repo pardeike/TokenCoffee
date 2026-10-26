@@ -158,6 +158,10 @@ public final class IOKitPowerAssertionClient: PowerAssertionClient {
             throw IOKitPowerError.rootDomainUnavailable
         }
         defer { IOObjectRelease(service) }
+        // Desktop Macs need only the ordinary system/display assertions.
+        let lid = IORegistryEntryCreateCFProperty(service, "AppleClamshellState" as CFString,
+                                                  kCFAllocatorDefault, 0)?.takeRetainedValue()
+        guard lid != nil else { return }
 
         var connection = io_connect_t()
         let openResult = IOServiceOpen(service, mach_task_self_, 0, &connection)
@@ -197,6 +201,7 @@ public enum TokenCoffeeDefaults {
     public static let closedDisplayModeEnabledKey = "closedDisplayModeEnabled"
     public static let preferredPowerModeKey = "preferredPowerMode"
     public static let screenBlackoutDelayKey = "screenBlackoutDelay"
+    public static let displaySleepDelayKey = "displaySleepDelay"
 
     public static func setClosedDisplayModeEnabled(_ enabled: Bool, userDefaults: UserDefaults = .standard) {
         userDefaults.set(enabled, forKey: closedDisplayModeEnabledKey)
@@ -229,5 +234,13 @@ public enum TokenCoffeeDefaults {
         userDefaults: UserDefaults = .standard
     ) {
         userDefaults.set(delay.rawValue, forKey: screenBlackoutDelayKey)
+    }
+
+    public static func preferredDisplaySleepDelay(userDefaults: UserDefaults = .standard) -> ScreenBlackoutDelay {
+        userDefaults.string(forKey: displaySleepDelayKey).flatMap(ScreenBlackoutDelay.init(rawValue:)) ?? .oneMinute
+    }
+
+    public static func setPreferredDisplaySleepDelay(_ delay: ScreenBlackoutDelay, userDefaults: UserDefaults = .standard) {
+        userDefaults.set(delay.rawValue, forKey: displaySleepDelayKey)
     }
 }

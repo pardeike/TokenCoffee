@@ -9,8 +9,17 @@
   transfers prototype metadata/settings/history once if the normal account registry
   does not exist, then launches only the normal app from `.build/Normal`.
 - `Scripts/build.sh --verify` verifies without launching the normal dashboard.
+- `Scripts/build.sh --deploy mba.home.arpa` tests, signs, and installs the app and
+  closed-lid sleep support on the Air. It preserves the previous installed app,
+  verifies app-owned Keychain access, and verifies real kernel sleep-state changes.
+  Sleep support uses the existing permission for exactly
+  `sudo -n /usr/bin/pmset -a disablesleep 0` and `1`. It never adds a sudo permission.
   `Scripts/package-release.sh` delegates to the same signed workflow with
   `--package`. It creates a local ZIP only; no upload, publication, or release.
+- `Scripts/package-release.sh --sleep-support` runs the signed tests and builds a
+  Developer ID-signed disk image for the optional native agent. Add `--notarize`
+  to submit it to Apple, staple and validate its ticket, and verify Gatekeeper.
+  Neither mode uploads to GitHub. Public release requires explicit authorization.
 - Default development team is W65292CD8T and default CloudKit environment is
   Development. Development/Production change tokens are kept separately. Bundle
   identity remains com.pardeike.TokenCoffee. Keep cloud production publishing out
@@ -24,6 +33,23 @@
   log path and nonzero exit code. Stop dependent steps and propagate cancellation.
 
 # Normal application
+
+- Mac awake uses TokenCoffee's own Display sleep delay. It requests real display
+  sleep after that idle delay and immediately when the lid closes. Screen on
+  keeps the desktop rendering, dims the built-in backlight when closed, and
+  optionally dims and covers idle displays. The two delays remain independent.
+  Off restores owned brightness and releases assertions. Desktops do not need
+  the privileged lid-sleep override. There is no repeating display-idle timer.
+
+- Sleep support runs as a signed native user agent managed by `launchd`.
+  The sandboxed app connects through a private socket in its own container.
+  Both peers verify the other's signing identity. The agent accepts one session
+  and waits for socket closure or app termination, without a polling timer.
+  It restores only power and brightness changes it owns. `launchd` restarts the
+  agent after a crash, and startup recovers interrupted changes before accepting
+  a new session. No runtime uses `NSUserUnixTask` or ScriptMonitor.
+  Quit Token Coffee before running `Scripts/install-sleep-support.sh`.
+  The installer preserves the former script helper for rollback but never runs it.
 
 - The multi-account dashboard is normal startup, with the existing real power
   controller, screen-blackout behavior, menu-bar lifecycle, account manager and

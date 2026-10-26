@@ -1,6 +1,10 @@
 # Token Coffee Support
 
-Token Coffee is a macOS menu-bar utility for Codex quota visibility, quota forecasting, iCloud sample sync, and Mac awake controls.
+Token Coffee is a macOS menu-bar utility for Codex and Claude usage, forecasts, private iCloud history sync and awake controls.
+
+For enhanced display controls and closed-lid operation, see the
+[Sleep Support installation instructions](https://github.com/pardeike/TokenCoffee#sleep-support).
+The optional component runs as a native background agent without a ScriptMonitor gear.
 
 For support, bug reports, and feature requests, use GitHub Issues:
 
@@ -14,4 +18,4 @@ When reporting a problem, include:
 - What the panel shows in the lower status row
 - Any relevant Xcode or Console error message, if you are running a development build
 
-Token Coffee is an independent utility and is not affiliated with OpenAI.
+Token Coffee is an independent utility and is not affiliated with OpenAI or Anthropic.

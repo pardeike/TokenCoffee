@@ -38,7 +38,6 @@
 		6E7AEB39C0022DE3B6F46307 /* CloudQuotaSampleSyncPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB3FDD37C3C09807AF107293 /* CloudQuotaSampleSyncPolicyTests.swift */; };
 		704E182BB2E05B338E5591EB /* CloudQuotaSampleChangeFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FFFBBF75F8DB6769CDE5D92 /* CloudQuotaSampleChangeFetcher.swift */; };
 		73DFCAB56F1E5BC3711299A8 /* StatusIconOff.png in Resources */ = {isa = PBXBuildFile; fileRef = 1197BE68CBCE1F6FF43ECD29 /* StatusIconOff.png */; };
-		782DF07C136C4F581ECA7B11 /* ClamshellFailSafeInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47CD5B392D5E17EE62E5BD77 /* ClamshellFailSafeInstaller.swift */; };
 		79E2C201F1E8A12C21E9CA77 /* PowerSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE7AD1A297019BC7C543926B /* PowerSessionController.swift */; };
 		7B8215A57DAF6D5DA899DEF9 /* QuotaForecastKitAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51C0934867DC2651DF30D12A /* QuotaForecastKitAdapter.swift */; };
 		80763E665FF71E3CF4A1EAA3 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 78DC4B26FEA8A020F3BB30F9 /* Security.framework */; };
@@ -47,6 +46,7 @@
 		8E44467D7F4FC5A0FB92A3BF /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 309606A2AD4618DE1244CDB8 /* AppModel.swift */; };
 		8FFF3DC513A2EE4218E8A5C9 /* ScreenBlankingController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46FE874DDEA88FC2F9EFE910 /* ScreenBlankingController.swift */; };
 		91654AE1616EAC17E37D1063 /* DemoQuotaData.json in Resources */ = {isa = PBXBuildFile; fileRef = 0FAC0F5A9603A4F9B39D3800 /* DemoQuotaData.json */; };
+		93152D4BB691A707E16B27E7 /* ClosedLidSleepProtectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB5D3B8533A961908ADB02AA /* ClosedLidSleepProtectionTests.swift */; };
 		9906BD24002E57B62E3CBE85 /* DashboardScreenPlacementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB783323944648E14388D4E7 /* DashboardScreenPlacementTests.swift */; };
 		9BAAD393FA0C312BFAEEB322 /* TokenCoffeeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91866704F00A6C51FF289D6A /* TokenCoffeeApp.swift */; };
 		9BDA67BBA82A798EE5E580B4 /* LinkedDashboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB93B10FD3B9AD4108350FC4 /* LinkedDashboardTests.swift */; };
@@ -66,6 +66,7 @@
 		BD699E23BDECA22670AA8230 /* PrototypeModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C8B061FF0A0595D7706B6EE /* PrototypeModel.swift */; };
 		BE689677F534ED08053E9BEF /* CodexNativeClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA58038499D13F07C5C9FE8F /* CodexNativeClientTests.swift */; };
 		C1BEB0ED90F1D712DE1A9839 /* QuotaSyncStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC1C73A26484DD327BF9F874 /* QuotaSyncStatus.swift */; };
+		C492863360DA78455F119A25 /* ScreenBlackoutPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E5923CD8459750F05FE8959 /* ScreenBlackoutPresenter.swift */; };
 		C7D8546AA1172C95423146E0 /* PredictorSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BA386310510746418E47B91 /* PredictorSettingsView.swift */; };
 		CC7616CD44C5345D0C9AF99D /* LinkedUsageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C67FC4BF9CD55BCA3C7BCA4 /* LinkedUsageService.swift */; };
 		D15DFE26B4CD2005A6362E9F /* TokenCoffeeCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = EA274434F4C69B881FDBF2F8 /* TokenCoffeeCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -84,6 +85,7 @@
 		EDF6297C87A0CD2D53938697 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03220F6952C7B17BBAB884B2 /* AppDelegate.swift */; };
 		F03EA849311CAFE749640924 /* LinkedAccountRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6883568B9B4D7788C355A7C3 /* LinkedAccountRegistry.swift */; };
 		F45A06377445A0303F777BEA /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 78DC4B26FEA8A020F3BB30F9 /* Security.framework */; };
+		F4862C6CA1013B8A06FB4A53 /* ClosedLidSleepProtection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5504F06043463E460F2C424 /* ClosedLidSleepProtection.swift */; };
 		F5362DB0AE508F30F7319D7B /* DashboardScreenPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97E2563B4C8CED3B070F4C7D /* DashboardScreenPlacement.swift */; };
 		F5A0A1A5110A2D4C6EBD1F64 /* QuotaForecastDiagnosticExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37C9C70ACF42EC08FC165EEF /* QuotaForecastDiagnosticExporter.swift */; };
 		FB9EABCE809EF735D0134BA8 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 93463707FA87FD54AA98CFAC /* SwiftUI.framework */; };
@@ -160,11 +162,11 @@
 		3A87F5169748A0C16D4D0CDB /* PowerSessionControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerSessionControllerTests.swift; sourceTree = "<group>"; };
 		3B3756373D0D6077E854F92B /* DemoQuotaData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoQuotaData.swift; sourceTree = "<group>"; };
 		3D601C714412883975A7B560 /* TokenCoffeeCoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TokenCoffeeCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		3E5923CD8459750F05FE8959 /* ScreenBlackoutPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenBlackoutPresenter.swift; sourceTree = "<group>"; };
 		3F0A1EA7966F893E37B09EE2 /* ClaudeUsageWindowsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeUsageWindowsTests.swift; sourceTree = "<group>"; };
 		3F1D37C9C19AC4DEAEF52EB3 /* PredictorTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PredictorTable.swift; sourceTree = "<group>"; };
 		4147C28107917F604875A985 /* ManagementWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagementWindowController.swift; sourceTree = "<group>"; };
 		46FE874DDEA88FC2F9EFE910 /* ScreenBlankingController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenBlankingController.swift; sourceTree = "<group>"; };
-		47CD5B392D5E17EE62E5BD77 /* ClamshellFailSafeInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClamshellFailSafeInstaller.swift; sourceTree = "<group>"; };
 		4BF37D1C9A2022A96BDB852C /* CloudKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CloudKit.framework; path = System/Library/Frameworks/CloudKit.framework; sourceTree = SDKROOT; };
 		4FFFBBF75F8DB6769CDE5D92 /* CloudQuotaSampleChangeFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudQuotaSampleChangeFetcher.swift; sourceTree = "<group>"; };
 		51C0934867DC2651DF30D12A /* QuotaForecastKitAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaForecastKitAdapter.swift; sourceTree = "<group>"; };
@@ -195,11 +197,13 @@
 		AB49006602A950ADB340B435 /* Token Coffee.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Token Coffee.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		AE9AB22617E7E48EC12FD68B /* CloudQuotaSampleChangeFetcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudQuotaSampleChangeFetcherTests.swift; sourceTree = "<group>"; };
 		B0C5145E0C5927208B1F27B7 /* TokenCoffee.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TokenCoffee.entitlements; sourceTree = "<group>"; };
+		B5504F06043463E460F2C424 /* ClosedLidSleepProtection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClosedLidSleepProtection.swift; sourceTree = "<group>"; };
 		B74643C6D39F9AE55A742819 /* AccountLoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountLoginView.swift; sourceTree = "<group>"; };
 		B9379B3F3A2D1BCF2F4898B7 /* CodexNativeUsageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexNativeUsageService.swift; sourceTree = "<group>"; };
 		B9BD5D8879BE323DD853C8A3 /* QuotaSampleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuotaSampleStore.swift; sourceTree = "<group>"; };
 		B9C3187BF6FB3997BBC1E839 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		BB555D4794B9843BAFE1F925 /* CodexNativeAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexNativeAuthService.swift; sourceTree = "<group>"; };
+		BB5D3B8533A961908ADB02AA /* ClosedLidSleepProtectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClosedLidSleepProtectionTests.swift; sourceTree = "<group>"; };
 		BB783323944648E14388D4E7 /* DashboardScreenPlacementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardScreenPlacementTests.swift; sourceTree = "<group>"; };
 		BB93B10FD3B9AD4108350FC4 /* LinkedDashboardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkedDashboardTests.swift; sourceTree = "<group>"; };
 		BCFD6138BF13A6244AF77F79 /* TokenCoffeeAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TokenCoffeeAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -288,6 +292,7 @@
 				95407346610322E866CF3FAE /* QuotaGraphPerceptualPalette.swift */,
 				18E81E0B4F04FE2D855436D9 /* QuotaHistoryWindow.swift */,
 				FC1C73A26484DD327BF9F874 /* QuotaSyncStatus.swift */,
+				3E5923CD8459750F05FE8959 /* ScreenBlackoutPresenter.swift */,
 				46FE874DDEA88FC2F9EFE910 /* ScreenBlankingController.swift */,
 				DAE6FFD288FA2AD75A829908 /* StatusPanelController.swift */,
 				B0C5145E0C5927208B1F27B7 /* TokenCoffee.entitlements */,
@@ -303,6 +308,7 @@
 			isa = PBXGroup;
 			children = (
 				3F0A1EA7966F893E37B09EE2 /* ClaudeUsageWindowsTests.swift */,
+				BB5D3B8533A961908ADB02AA /* ClosedLidSleepProtectionTests.swift */,
 				CA58038499D13F07C5C9FE8F /* CodexNativeClientTests.swift */,
 				66000B9ACB41BED799FD3273 /* CodexRateLimitDecodingTests.swift */,
 				FA05C00E283A5DDB994354D0 /* DemoQuotaDataTests.swift */,
@@ -384,9 +390,9 @@
 		D8817E942A3D9F18D01064F2 /* TokenCoffeeCore */ = {
 			isa = PBXGroup;
 			children = (
-				47CD5B392D5E17EE62E5BD77 /* ClamshellFailSafeInstaller.swift */,
 				DFBD6559FF5E5FD088861490 /* ClaudeNativeUsage.swift */,
 				26E3801B5B7A4AB15169F7A4 /* ClaudeUsageWindows.swift */,
+				B5504F06043463E460F2C424 /* ClosedLidSleepProtection.swift */,
 				F80C9D134652C039633B30B5 /* CodexKeychainTokenStore.swift */,
 				BB555D4794B9843BAFE1F925 /* CodexNativeAuthService.swift */,
 				5645DB2AF14015C9B891D4FD /* CodexNativeSupport.swift */,
@@ -518,7 +524,6 @@
 				};
 			};
 			buildConfigurationList = 4C239539E0BC260A9B4C0234 /* Build configuration list for PBXProject "TokenCoffee" */;
-			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -531,13 +536,14 @@
 				8D9BC5840B2994C549157188 /* XCLocalSwiftPackageReference "Packages/QuotaForecastKit" */,
 			);
 			preferredProjectObjectVersion = 77;
+			productRefGroup = 594ACE384572801C998698F2 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				4BA138AFAA9118242C875A03 /* TokenCoffee */,
-				5CD2E81433BE2FAF891BF4FC /* TokenCoffeeAppTests */,
 				840754A614744B41BBA8E783 /* TokenCoffeeCore */,
+				4BA138AFAA9118242C875A03 /* TokenCoffee */,
 				EF1CDD5BB1E60C3894FC56E9 /* TokenCoffeeCoreTests */,
+				5CD2E81433BE2FAF891BF4FC /* TokenCoffeeAppTests */,
 			);
 		};
 /* End PBXProject section */
@@ -584,6 +590,7 @@
 				9EAC015561A9C5E9326E3824 /* QuotaGraphPerceptualPalette.swift in Sources */,
 				9E74088D68D183844045E6F0 /* QuotaHistoryWindow.swift in Sources */,
 				C1BEB0ED90F1D712DE1A9839 /* QuotaSyncStatus.swift in Sources */,
+				C492863360DA78455F119A25 /* ScreenBlackoutPresenter.swift in Sources */,
 				8FFF3DC513A2EE4218E8A5C9 /* ScreenBlankingController.swift in Sources */,
 				B7FCF9112D2FF1984F036205 /* StatusPanelController.swift in Sources */,
 				9BAAD393FA0C312BFAEEB322 /* TokenCoffeeApp.swift in Sources */,
@@ -611,9 +618,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				782DF07C136C4F581ECA7B11 /* ClamshellFailSafeInstaller.swift in Sources */,
 				A8AE758DC921D6F90DA2B9C3 /* ClaudeNativeUsage.swift in Sources */,
 				E354F9C8F56C3808E4336439 /* ClaudeUsageWindows.swift in Sources */,
+				F4862C6CA1013B8A06FB4A53 /* ClosedLidSleepProtection.swift in Sources */,
 				308DF753892FBB5F017C097F /* CodexKeychainTokenStore.swift in Sources */,
 				EC01D5842E2837D1C4352CB7 /* CodexNativeAuthService.swift in Sources */,
 				DC9F2F59FB48E23513A03E3C /* CodexNativeSupport.swift in Sources */,
@@ -638,6 +645,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4A6EFE8B9E56389DE871E320 /* ClaudeUsageWindowsTests.swift in Sources */,
+				93152D4BB691A707E16B27E7 /* ClosedLidSleepProtectionTests.swift in Sources */,
 				BE689677F534ED08053E9BEF /* CodexNativeClientTests.swift in Sources */,
 				00DEFA85B5E36A650B8979A9 /* CodexRateLimitDecodingTests.swift in Sources */,
 				27108E628CABE879C06A14DB /* DemoQuotaDataTests.swift in Sources */,
@@ -774,7 +782,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pardeike.TokenCoffee;
 				PRODUCT_NAME = "Token Coffee";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -949,7 +957,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.2.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.pardeike.TokenCoffee;
 				PRODUCT_NAME = "Token Coffee";
 				PROVISIONING_PROFILE_SPECIFIER = "";

@@ -2,6 +2,27 @@ import XCTest
 @testable import TokenCoffeeCore
 
 final class PowerSessionControllerTests: XCTestCase {
+    func testMacAwakeDoesNotPreventDisplaySleep() throws {
+        let client = FakePowerAssertionClient()
+        let controller = PowerSessionController(client: client)
+
+        try controller.apply(mode: .keepAwake)
+
+        XCTAssertEqual(client.createdKinds, [.preventIdleSystemSleep])
+        XCTAssertEqual(client.clamshellDisabledValues, [true])
+    }
+
+    func testSwitchingToMacAwakeReleasesTheDisplayAssertion() throws {
+        let client = FakePowerAssertionClient()
+        let controller = PowerSessionController(client: client)
+        try controller.apply(mode: .keepAwakeDisplay)
+
+        try controller.apply(mode: .keepAwake)
+
+        XCTAssertEqual(client.releasedIDs, [2, 1])
+        XCTAssertEqual(client.createdKinds, [.preventIdleSystemSleep, .preventIdleDisplaySleep, .preventIdleSystemSleep])
+    }
+
     func testKeepAwakeDisplayCreatesAssertionsAndDisablesClamshellSleep() throws {
         let client = FakePowerAssertionClient()
         let controller = PowerSessionController(client: client)

@@ -15,6 +15,7 @@ enum CodexSignInState: Equatable {
 final class AppModel: ObservableObject {
     @Published private(set) var powerMode: PowerSessionMode = .off
     @Published private(set) var screenBlackoutDelay: ScreenBlackoutDelay = .oneMinute
+    @Published private(set) var displaySleepDelay: ScreenBlackoutDelay = .oneMinute
     @Published private(set) var powerErrorMessage: String?
     @Published private(set) var quotaSnapshot: RateLimitSnapshot?
     @Published private(set) var quotaSamples: [QuotaSample] = []
@@ -29,10 +30,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var isDemoModeEnabled = false
 
     private let powerController: PowerSessionController
+    private let closedLidProtection = ClosedLidSleepProtection()
+    private var powerConfigurationTask: Task<Void, Never>?
     private let quotaClient: CodexRateLimitClient
     private let sampleStore: QuotaSampleStore
     private let sampleSyncService: CloudQuotaSampleSyncService
-    private let failSafeInstaller: ClamshellFailSafeInstaller
     private let quotaContinuityGate = QuotaSnapshotContinuityGate()
     private let bundledDemoScenario: DemoQuotaScenario?
     private let startsInDemoMode: Bool
@@ -41,7 +43,6 @@ final class AppModel: ObservableObject {
     private var activeCodexLogin: CodexDeviceCodeLogin?
     private var hasStartedLiveRuntime = false
     private var managesQuota = true
-    private var hasInstalledFailSafe = false
     private var liveStateBeforeDemoMode: AppModelLiveState?
 
     init(
@@ -49,7 +50,6 @@ final class AppModel: ObservableObject {
         quotaClient: CodexRateLimitClient,
         sampleStore: QuotaSampleStore,
         sampleSyncService: CloudQuotaSampleSyncService,
-        failSafeInstaller: ClamshellFailSafeInstaller,
         demoScenario: DemoQuotaScenario? = nil,
         startsInDemoMode: Bool = false
     ) {
@@ -57,12 +57,22 @@ final class AppModel: ObservableObject {
         self.quotaClient = quotaClient
         self.sampleStore = sampleStore
         self.sampleSyncService = sampleSyncService
-        self.failSafeInstaller = failSafeInstaller
         self.bundledDemoScenario = demoScenario
         self.startsInDemoMode = startsInDemoMode && demoScenario != nil
         self.isDemoModeEnabled = self.startsInDemoMode
         self.powerMode = self.startsInDemoMode ? .keepAwakeDisplay : TokenCoffeeDefaults.preferredPowerMode()
         self.screenBlackoutDelay = TokenCoffeeDefaults.preferredScreenBlackoutDelay()
+        self.displaySleepDelay = TokenCoffeeDefaults.preferredDisplaySleepDelay()
+        closedLidProtection.onUnexpectedExit = { [weak self] in
+            guard let self else { return }
+            let message = ClosedLidSleepProtection.Failure.stoppedUnexpectedly.localizedDescription
+            if self.powerErrorMessage != message { self.powerErrorMessage = message }
+        }
+        closedLidProtection.onDisplayFailure = { [weak self] in
+            guard let self else { return }
+            let message = ClosedLidSleepProtection.Failure.displayUnavailable.localizedDescription
+            if self.powerErrorMessage != message { self.powerErrorMessage = message }
+        }
     }
 
     var referenceDate: Date {
@@ -137,6 +147,8 @@ final class AppModel: ObservableObject {
     }
 
     func shutdown() {
+        closedLidProtection.close()
+        powerConfigurationTask?.cancel()
         refreshTimer?.invalidate()
         quotaClientEventTask?.cancel()
         try? powerController.apply(mode: .off)
@@ -173,6 +185,20 @@ final class AppModel: ObservableObject {
         }
         screenBlackoutDelay = delay
         TokenCoffeeDefaults.setPreferredScreenBlackoutDelay(delay)
+    }
+
+    func performDisplayAction(_ action: DisplayPowerAction) {
+        do { try closedLidProtection.perform(action) }
+        catch {
+            let message = ClosedLidSleepProtection.Failure.displayUnavailable.localizedDescription
+            if powerErrorMessage != message { powerErrorMessage = message }
+        }
+    }
+
+    func setDisplaySleepDelay(_ delay: ScreenBlackoutDelay) {
+        guard displaySleepDelay != delay else { return }
+        displaySleepDelay = delay
+        TokenCoffeeDefaults.setPreferredDisplaySleepDelay(delay)
     }
 
     func refreshQuota() {
@@ -454,28 +480,23 @@ final class AppModel: ObservableObject {
     }
 
     private func applyPowerConfiguration() {
-        do {
-            if powerMode != .off {
-                installFailSafeIfPossible()
-            }
-            try powerController.apply(mode: powerMode)
-            powerErrorMessage = nil
-        } catch {
-            powerErrorMessage = error.localizedDescription
-        }
-    }
-
-    private func installFailSafeIfPossible() {
-        guard !hasInstalledFailSafe,
-              let executableURL = Bundle.main.executableURL else {
-            return
-        }
-
-        do {
-            try failSafeInstaller.install(bundleExecutableURL: executableURL)
-            hasInstalledFailSafe = true
-        } catch {
-            NSLog("Token Coffee could not install clamshell fail-safe: \(error.localizedDescription)")
+        guard powerConfigurationTask == nil else { return }
+        powerConfigurationTask = Task {
+            var applied: PowerSessionMode
+            repeat {
+                applied = powerMode
+                do {
+                    try Task.checkCancellation()
+                    try powerController.apply(mode: applied)
+                    try await closedLidProtection.setEnabled(applied != .off)
+                    if applied == .keepAwakeDisplay { try closedLidProtection.perform(.wake) }
+                    if powerErrorMessage != nil { powerErrorMessage = nil }
+                } catch {
+                    let message = error.localizedDescription
+                    if powerErrorMessage != message { powerErrorMessage = message }
+                }
+            } while !Task.isCancelled && applied != powerMode
+            powerConfigurationTask = nil
         }
     }
 

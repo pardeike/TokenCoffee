@@ -1,252 +1,181 @@
 import AppKit
 import CoreGraphics
+import IOKit
+import OSLog
 import TokenCoffeeCore
 
 @MainActor
-protocol ScreenBlackoutPresenting: AnyObject {
-    var isVisible: Bool { get }
-
-    func show()
-    func hide()
-    func refreshDisplays()
-}
-
-@MainActor
 final class ScreenBlankingController: NSObject {
-    private let checkInterval: TimeInterval
+    private static let logger = Logger(subsystem: "com.pardeike.TokenCoffee", category: "DisplayPower")
     private let idleTimeProvider: () -> TimeInterval
-    private let presenter: ScreenBlackoutPresenting
+    private let lidClosedProvider: () -> Bool
+    private let action: (DisplayPowerAction) -> Void
+    private let observesSystemEvents: Bool
+    private let now: () -> Date
+    private let cover: any ScreenBlackoutPresenting
     private var timer: Timer?
-    private var isEnabled = false
-    private var inactivityThreshold: TimeInterval?
+    private var mode = PowerSessionMode.off
+    private var sleepThreshold: TimeInterval?
+    private var coverThreshold: TimeInterval?
+    private var lastAction: DisplayPowerAction?
+    private var resumedAt: Date?
+    private var lastLidClosed = false
+    private var notificationPort: IONotificationPortRef?
+    private var lidObserver: io_object_t = 0
+    var hasScheduledCheck: Bool { timer != nil }
 
     init(
-        checkInterval: TimeInterval = 0.25,
         idleTimeProvider: @escaping () -> TimeInterval = {
-            CGEventSource.secondsSinceLastEventType(
-                .combinedSessionState,
-                eventType: CGEventType(rawValue: UInt32.max)!
-            )
+            CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: UInt32.max)!)
         },
-        presenter: ScreenBlackoutPresenting? = nil
+        lidClosedProvider: (() -> Bool)? = nil,
+        observesSystemEvents: Bool = true,
+        now: @escaping () -> Date = { Date() },
+        cover: (any ScreenBlackoutPresenting)? = nil,
+        action: @escaping (DisplayPowerAction) -> Void
     ) {
-        self.checkInterval = checkInterval
         self.idleTimeProvider = idleTimeProvider
-        self.presenter = presenter ?? ScreenBlackoutPresenter()
+        self.lidClosedProvider = lidClosedProvider ?? Self.systemLidClosed
+        self.observesSystemEvents = observesSystemEvents
+        self.now = now
+        self.cover = cover ?? ScreenBlackoutPresenter()
+        self.action = action
         super.init()
-    }
-
-    func setConfiguration(powerMode: PowerSessionMode, blackoutDelay: ScreenBlackoutDelay) {
-        inactivityThreshold = blackoutDelay.inactivityThreshold
-        let shouldEnable = powerMode == .keepAwakeDisplay && inactivityThreshold != nil
-
-        if isEnabled != shouldEnable {
-            setEnabled(shouldEnable)
-        } else if shouldEnable {
-            checkNow()
+        self.cover.onDismiss = { [weak self] in
+            guard let self else { return }
+            self.resumedAt = self.now()
+            self.lastAction = nil
+            self.checkNow()
         }
     }
 
-    private func setEnabled(_ enabled: Bool) {
-        guard isEnabled != enabled else {
+    func setConfiguration(powerMode: PowerSessionMode, blackoutDelay: ScreenBlackoutDelay,
+                          displaySleepDelay: ScreenBlackoutDelay = .oneMinute) {
+        let previous = mode
+        mode = powerMode
+        sleepThreshold = displaySleepDelay.inactivityThreshold
+        coverThreshold = blackoutDelay.inactivityThreshold
+        Self.logger.info("Configuration: mode=\(powerMode.rawValue, privacy: .public), sleep=\(displaySleepDelay.rawValue, privacy: .public), cover=\(blackoutDelay.rawValue, privacy: .public)")
+        if mode == .off {
+            shutdown()
             return
         }
-
-        isEnabled = enabled
-        if enabled {
-            startMonitoring()
-            checkNow()
-        } else {
-            stopMonitoring()
-            presenter.hide()
-        }
-    }
-
-    func shutdown() {
-        isEnabled = false
-        stopMonitoring()
-        presenter.hide()
-    }
-
-    func checkNow() {
-        guard isEnabled,
-              let inactivityThreshold else {
-            presenter.hide()
-            return
-        }
-
-        if idleTimeProvider() >= inactivityThreshold {
-            presenter.show()
-        } else {
-            presenter.hide()
-        }
-    }
-
-    private func startMonitoring() {
-        guard timer == nil else {
-            return
-        }
-
-        let timer = Timer(
-            timeInterval: checkInterval,
-            target: self,
-            selector: #selector(checkTimerFired(_:)),
-            userInfo: nil,
-            repeats: true
-        )
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
-
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(screenParametersDidChange(_:)),
-            name: NSApplication.didChangeScreenParametersNotification,
-            object: nil
-        )
-    }
-
-    private func stopMonitoring() {
-        timer?.invalidate()
-        timer = nil
-        NotificationCenter.default.removeObserver(
-            self,
-            name: NSApplication.didChangeScreenParametersNotification,
-            object: nil
-        )
-    }
-
-    @objc private func checkTimerFired(_ timer: Timer) {
+        if previous == .off { startObserving() }
         checkNow()
     }
 
-    @objc private func screenParametersDidChange(_ notification: Notification) {
-        presenter.refreshDisplays()
-    }
-}
-
-@MainActor
-final class ScreenBlackoutPresenter: ScreenBlackoutPresenting {
-    private(set) var isVisible = false
-    private let screensProvider: () -> [NSScreen]
-    private let displayBoundsProvider: () -> [CGRect]
-    private let moveCursor: (CGPoint) -> CGError
-    private var windows: [NSWindow] = []
-
-    init(
-        screensProvider: @escaping () -> [NSScreen] = { NSScreen.screens },
-        displayBoundsProvider: @escaping () -> [CGRect] = {
-            ScreenBlackoutPresenter.activeDisplayBounds()
-        },
-        moveCursor: @escaping (CGPoint) -> CGError = { point in
-            CGWarpMouseCursorPosition(point)
+    func shutdown() {
+        mode = .off
+        stopTimer()
+        cover.hide()
+        send(.restore)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        if let notificationPort {
+            if let source = IONotificationPortGetRunLoopSource(notificationPort)?.takeUnretainedValue() {
+                CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+            }
+            if lidObserver != 0 { IOObjectRelease(lidObserver); lidObserver = 0 }
+            IONotificationPortDestroy(notificationPort)
+            self.notificationPort = nil
         }
-    ) {
-        self.screensProvider = screensProvider
-        self.displayBoundsProvider = displayBoundsProvider
-        self.moveCursor = moveCursor
     }
 
-    func show() {
-        guard !isVisible else {
+    func checkNow() {
+        guard mode != .off else { return }
+        let closed = lidClosedProvider()
+        if lastLidClosed && !closed { resumedAt = now() }
+        lastLidClosed = closed
+        let idle = min(idleTimeProvider(), resumedAt.map { max(0, now().timeIntervalSince($0)) } ?? .infinity)
+        if mode == .keepAwakeDisplay {
+            if let coverThreshold, idle >= coverThreshold {
+                stopTimer()
+                cover.show()
+                send(.dimAll)
+            } else {
+                cover.hide()
+                send(closed ? .dim : .restore)
+                scheduleCheck(in: coverThreshold.map { $0 - idle })
+            }
             return
         }
-
-        moveCursorToBottomRightOfRightmostDisplay()
-        isVisible = true
-        rebuildWindows()
-    }
-
-    func hide() {
-        guard isVisible else {
+        cover.hide()
+        if closed {
+            stopTimer()
+            send(.sleep)
             return
         }
-
-        isVisible = false
-        removeWindows()
-    }
-
-    func refreshDisplays() {
-        guard isVisible else {
+        guard let threshold = sleepThreshold else {
+            stopTimer()
+            send(.restore)
             return
         }
-
-        rebuildWindows()
-    }
-
-    private func rebuildWindows() {
-        removeWindows()
-        windows = screensProvider().map(makeWindow(for:))
-        windows.forEach { $0.orderFrontRegardless() }
-    }
-
-    private func moveCursorToBottomRightOfRightmostDisplay() {
-        guard let rightmostBounds = displayBoundsProvider().max(by: { $0.maxX < $1.maxX }) else {
-            NSLog("Token Coffee could not move the cursor because macOS reported no active displays.")
-            return
-        }
-
-        let bottomRight = CGPoint(
-            x: rightmostBounds.maxX - 1,
-            y: rightmostBounds.maxY - 1
-        )
-        let cursorResult = moveCursor(bottomRight)
-        if cursorResult != .success {
-            NSLog("Token Coffee could not move the cursor, CoreGraphics error \(cursorResult.rawValue).")
+        if idle >= threshold {
+            stopTimer()
+            send(.sleep)
+        } else {
+            send(.restore)
+            scheduleCheck(in: threshold - idle)
         }
     }
 
-    nonisolated private static func activeDisplayBounds() -> [CGRect] {
-        var displayCount: UInt32 = 0
-        guard CGGetActiveDisplayList(0, nil, &displayCount) == .success,
-              displayCount > 0 else {
-            return []
+    private func scheduleCheck(in interval: TimeInterval?) {
+        guard let interval else { stopTimer(); return }
+        let deadline = now().addingTimeInterval(max(0.05, interval))
+        if let timer, abs(timer.fireDate.timeIntervalSince(deadline)) < 0.1 { return }
+        stopTimer()
+        let timer = Timer(fire: deadline, interval: 0, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.timer = nil
+                self?.checkNow()
+            }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
 
-        var displayIDs = [CGDirectDisplayID](repeating: 0, count: Int(displayCount))
-        guard CGGetActiveDisplayList(displayCount, &displayIDs, &displayCount) == .success else {
-            return []
+    private func send(_ action: DisplayPowerAction) {
+        guard lastAction != action else { return }
+        lastAction = action
+        Self.logger.info("Action: \(action.rawValue, privacy: .public)")
+        self.action(action)
+    }
+
+    private func stopTimer() { timer?.invalidate(); timer = nil }
+
+    private func startObserving() {
+        guard observesSystemEvents else { return }
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(displayWoke),
+            name: NSWorkspace.screensDidWakeNotification, object: nil)
+        let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard root != IO_OBJECT_NULL else { return }
+        defer { IOObjectRelease(root) }
+        guard let port = IONotificationPortCreate(kIOMainPortDefault) else { return }
+        let result = IOServiceAddInterestNotification(port, root, kIOGeneralInterest, { context, _, _, _ in
+            guard let context else { return }
+            let controller = Unmanaged<ScreenBlankingController>.fromOpaque(context).takeUnretainedValue()
+            MainActor.assumeIsolated {
+                if controller.cover.isVisible || controller.lidClosedProvider() { controller.lastAction = nil }
+                controller.checkNow()
+            }
+        }, Unmanaged.passUnretained(self).toOpaque(), &lidObserver)
+        guard result == KERN_SUCCESS else { IONotificationPortDestroy(port); return }
+        notificationPort = port
+        if let source = IONotificationPortGetRunLoopSource(port)?.takeUnretainedValue() {
+            CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         }
-
-        return displayIDs.prefix(Int(displayCount)).map(CGDisplayBounds)
     }
 
-    private func removeWindows() {
-        windows.forEach { $0.orderOut(nil) }
-        windows.removeAll()
+    @objc func displayWoke() {
+        if mode == .keepAwake { resumedAt = now() }
+        lastAction = nil
+        checkNow()
     }
 
-    private func makeWindow(for screen: NSScreen) -> NSWindow {
-        let window = ScreenBlackoutWindow(
-            contentRect: screen.frame,
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false,
-            screen: screen
-        )
-        window.setFrame(screen.frame, display: false)
-        window.backgroundColor = .black
-        window.isOpaque = true
-        window.hasShadow = false
-        window.ignoresMouseEvents = true
-        window.hidesOnDeactivate = false
-        window.animationBehavior = .none
-        window.level = .screenSaver
-        window.collectionBehavior = [
-            .canJoinAllSpaces,
-            .fullScreenAuxiliary,
-            .stationary,
-            .ignoresCycle
-        ]
-
-        let blackoutView = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
-        blackoutView.wantsLayer = true
-        blackoutView.layer?.backgroundColor = NSColor.black.cgColor
-        window.contentView = blackoutView
-        return window
+    private static func systemLidClosed() -> Bool {
+        let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
+        guard root != IO_OBJECT_NULL else { return false }
+        defer { IOObjectRelease(root) }
+        return IORegistryEntryCreateCFProperty(root, "AppleClamshellState" as CFString,
+            kCFAllocatorDefault, 0)?.takeRetainedValue() as? Bool ?? false
     }
-}
-
-private final class ScreenBlackoutWindow: NSWindow {
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
 }

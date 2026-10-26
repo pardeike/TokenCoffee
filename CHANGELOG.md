@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0
+
+- Give Mac awake its own display-sleep delay, including when macOS display sleep is set to Never.
+- Dim supported backlights with the optional black cover while Screen on remains active.
+- Add optional native sleep support for closed-lid operation and restore owned power and brightness settings after exits or crashes.
+- Run sleep support as a native background agent without the ScriptMonitor gear.
+- Add a Sleep support menu item with installation instructions.
+- Improve diagnostics for Claude authorization failures without recording credentials or private provider responses.
+
 ## 1.1.0
 
 - Follow multiple Codex and Claude accounts in one adaptive dashboard.
