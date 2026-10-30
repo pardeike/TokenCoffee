@@ -26,8 +26,7 @@ final class ScreenBlackoutPresenter: ScreenBlackoutPresenting {
         }
         isVisible = true
         windows = NSScreen.screens.map { screen in
-            let window = ScreenBlackoutWindow(contentRect: screen.frame, styleMask: [.borderless],
-                                             backing: .buffered, defer: false, screen: screen)
+            let window = ScreenBlackoutWindow(covering: screen)
             window.backgroundColor = .black
             window.isOpaque = true
             window.hasShadow = false
@@ -67,7 +66,15 @@ final class ScreenBlackoutPresenter: ScreenBlackoutPresenting {
     }
 }
 
-private final class ScreenBlackoutWindow: NSWindow {
+final class ScreenBlackoutWindow: NSWindow {
+    convenience init(covering screen: NSScreen) {
+        self.init(contentRect: screen.frame, styleMask: [.borderless],
+                   backing: .buffered, defer: false, screen: screen)
+        // The initializer offsets its rectangle by the supplied screen's origin.
+        // Covers use global coordinates, including monitors left of the main one.
+        setFrame(screen.frame, display: false)
+    }
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }

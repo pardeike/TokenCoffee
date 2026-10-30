@@ -5,6 +5,15 @@ import XCTest
 
 @MainActor
 final class ScreenBlankingControllerTests: XCTestCase {
+    func testBlackoutWindowCoversEveryConnectedScreenInGlobalCoordinates() throws {
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else { throw XCTSkip("No display is available") }
+        for screen in screens {
+            let window = ScreenBlackoutWindow(covering: screen)
+            XCTAssertEqual(window.frame, screen.frame, "Incorrect cover frame for \(screen.localizedName)")
+        }
+    }
+
     func testMacAwakeUsesItsOwnDisplaySleepDeadline() {
         var idle: TimeInterval = 59.99
         var actions: [DisplayPowerAction] = []

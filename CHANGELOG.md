@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.1
+
+- Place blackout covers correctly on secondary monitors, including displays to the left of the main monitor.
+- Request sleep for all displays in Mac awake, even when the main display is already asleep.
+
 ## 1.2.0
 
 - Give Mac awake its own display-sleep delay, including when macOS display sleep is set to Never.

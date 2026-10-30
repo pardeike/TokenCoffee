@@ -188,7 +188,6 @@ static int sleep_display(void) {
     fclose(file);
     return 0;
 #else
-    if (CGDisplayIsAsleep(CGMainDisplayID())) return 0;
     pid_t child = fork();
     if (child == 0) { execl("/usr/bin/pmset", "pmset", "displaysleepnow", (char *)NULL); _exit(127); }
     if (child < 0) return -1;
